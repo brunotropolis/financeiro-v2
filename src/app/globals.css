@@ -1,0 +1,49 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body {
+    background-color: #0a0a0a;
+    color: #fafafa;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+  }
+
+  * {
+    border-color: #1f1f1f;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* Sutil glow no accent lime */
+  .glow-lime {
+    box-shadow: 0 0 32px -8px rgba(197, 240, 44, 0.45);
+  }
+
+  /* Gradient suave verde pro card "Premium-style" */
+  .bg-lime-gradient {
+    background: linear-gradient(135deg, #c5f02c 0%, #a8d420 100%);
+  }
+
+  /* Scrollbar enxuta dark */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #262626;
+    border-radius: 6px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #3f3f3f;
+  }
+}
