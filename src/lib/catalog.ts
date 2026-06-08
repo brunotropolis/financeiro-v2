@@ -1,0 +1,46 @@
+import { createClient } from "@/lib/supabase/server";
+
+export type CategoriaItem = {
+  id: string;
+  nome: string;
+  tipo: string;
+  cor: string | null;
+};
+
+export type OrigemItem = {
+  id: string;
+  slug: string;
+  nome: string;
+};
+
+export async function getCategorias(tipo?: "despesa" | "receita"): Promise<CategoriaItem[]> {
+  const supabase = await createClient();
+  let q = supabase
+    .from("categorias")
+    .select("id, nome, tipo, cor_hex")
+    .eq("ativo", true)
+    .order("nome");
+  if (tipo) q = q.eq("tipo", tipo);
+  const { data } = await q;
+  const rows = (data ?? []) as Array<{
+    id: string;
+    nome: string;
+    tipo: string;
+    cor_hex: string | null;
+  }>;
+  return rows.map((r) => ({ id: r.id, nome: r.nome, tipo: r.tipo, cor: r.cor_hex }));
+}
+
+export async function getOrigens(): Promise<OrigemItem[]> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("origens_receita")
+    .select("id, slug, nome")
+    .eq("ativo", true)
+    .order("nome");
+  return ((data ?? []) as OrigemItem[]).map((r) => ({
+    id: r.id,
+    slug: r.slug,
+    nome: r.nome,
+  }));
+}
