@@ -88,7 +88,7 @@ export function LancarForm({
   const [contaId, setContaId] = useState<string>(CONTAS_ATIVAS[0].id);
   const [categoriaId, setCategoriaId] = useState("");
   const [data, setData] = useState(() => new Date().toISOString().slice(0, 10));
-  const [status, setStatus] = useState<"prevista" | "pago">("prevista");
+  const [status, setStatus] = useState<"prevista" | "paga">("prevista");
 
   // específicos recorrente
   const [frequencia, setFrequencia] = useState<"mensal" | "semanal" | "quinzenal">("mensal");
@@ -388,9 +388,9 @@ export function LancarForm({
                 onClick={() => setStatus("prevista")}
               />
               <Toggle
-                active={status === "pago"}
+                active={status === "paga"}
                 label="Já paguei"
-                onClick={() => setStatus("pago")}
+                onClick={() => setStatus("paga")}
               />
             </div>
           </Row>

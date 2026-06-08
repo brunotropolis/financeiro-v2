@@ -83,8 +83,8 @@ export async function getResumoMes(): Promise<ResumoMes> {
       .from("transacoes")
       .select("valor, status")
       .eq("tipo", "despesa")
-      .gte("data", inicio)
-      .lte("data", fim),
+      .gte("data_competencia", inicio)
+      .lte("data_competencia", fim),
   ]);
 
   const receitas = (receitasRes.data ?? []) as Array<{ valor_liquido: number | string }>;
@@ -96,7 +96,7 @@ export async function getResumoMes(): Promise<ResumoMes> {
   let previstas = 0;
   for (const t of despesas) {
     const v = Number(t.valor) || 0;
-    if (t.status === "pago" || t.status === "recebido") pagas += v;
+    if (t.status === "paga" || t.status === "confirmada" || t.status === "recebido") pagas += v;
     else previstas += v;
   }
 

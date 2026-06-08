@@ -200,7 +200,7 @@ export default async function LancamentosPage({
                           <td className="px-4 py-3">
                             <span
                               className={`text-[10px] uppercase tracking-wider rounded px-1.5 py-0.5 ${
-                                t.status === "pago" || t.status === "recebido"
+                                t.status === "paga" || t.status === "confirmada" || t.status === "recebido"
                                   ? "bg-positive/15 text-positive"
                                   : "bg-elevated text-ink-soft border border-line"
                               }`}

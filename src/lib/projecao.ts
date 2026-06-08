@@ -53,7 +53,7 @@ export async function projetar6Meses(): Promise<ProjecaoMes[]> {
     .select("conta_id, valor, data_competencia, status")
     .in("conta_id", [...CONTAS_ATIVAS_IDS])
     .eq("tipo", "despesa")
-    .neq("status", "pago")
+    .neq("status", "paga")
     .gte("data_competencia", inicioIso)
     .lte("data_competencia", fimIso);
   const despRows = (despRes.data ?? []) as Array<{

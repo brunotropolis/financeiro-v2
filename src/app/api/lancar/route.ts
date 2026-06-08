@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
           descricao: body.descricao ?? "(sem descrição)",
           valor,
           data_competencia: body.data_competencia,
-          data_pagamento: body.status === "pago" ? body.data_competencia : null,
+          data_pagamento: body.status === "paga" ? body.data_competencia : null,
           entidade_id,
           categoria_id: body.categoria_id ?? null,
           conta_id,
