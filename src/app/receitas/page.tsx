@@ -1,0 +1,174 @@
+import Link from "next/link";
+import { Sidebar } from "@/components/layout/sidebar";
+import { Topbar } from "@/components/layout/topbar";
+import { Card } from "@/components/ui/card";
+import { createClient } from "@/lib/supabase/server";
+import { getSaldoGreenn } from "@/lib/queries";
+import { formatBRL, formatDate } from "@/lib/formatters";
+import { GreennLine } from "./greenn-line";
+import { Sparkles, PlusCircle } from "lucide-react";
+
+export const dynamic = "force-dynamic";
+
+type Receita = {
+  id: string;
+  produto_nome: string | null;
+  origem: string | null;
+  valor_liquido: number | string;
+  data_venda: string;
+  data_prevista_pagamento: string | null;
+  data_recebimento: string | null;
+  status: string;
+};
+
+export default async function ReceitasPage() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const greenn = await getSaldoGreenn();
+
+  // Últimas 60 receitas (cobre vários meses)
+  const recRes = await supabase
+    .from("receitas_brutas")
+    .select(
+      "id, produto_nome, origem, valor_liquido, data_venda, data_prevista_pagamento, data_recebimento, status"
+    )
+    .order("data_venda", { ascending: false })
+    .limit(60);
+  const receitas = (recRes.data ?? []) as Receita[];
+
+  const totalFat = receitas.reduce((s, r) => s + Number(r.valor_liquido), 0);
+  const totalRecebido = receitas
+    .filter((r) => r.status === "recebido")
+    .reduce((s, r) => s + Number(r.valor_liquido), 0);
+  const totalAReceber = totalFat - totalRecebido;
+
+  return (
+    <div className="min-h-screen flex bg-bg">
+      <Sidebar userEmail={user?.email} />
+
+      <main className="flex-1 min-w-0">
+        <Topbar breadcrumb={["Operação", "Receitas"]} />
+
+        <div className="p-6 lg:p-8 max-w-6xl">
+          <div className="flex items-start justify-between mb-6">
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight">Receitas</h1>
+              <p className="text-xs text-ink-dim mt-1">
+                Faturamento manual + saldo Greenn no topo.
+              </p>
+            </div>
+            <Link
+              href="/lancar"
+              className="inline-flex items-center gap-1.5 text-xs bg-lime text-bg font-semibold rounded-lg px-3 py-1.5 hover:bg-lime-glow"
+            >
+              <PlusCircle className="h-3.5 w-3.5" />
+              Nova receita
+            </Link>
+          </div>
+
+          {/* Stats */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
+            <Card className="!p-4">
+              <div className="text-xs text-ink-soft">Faturamento (60 últimas)</div>
+              <div className="text-xl font-bold mt-0.5">{formatBRL(totalFat)}</div>
+            </Card>
+            <Card className="!p-4">
+              <div className="text-xs text-ink-soft">Já em caixa</div>
+              <div className="text-xl font-bold text-positive mt-0.5">
+                {formatBRL(totalRecebido)}
+              </div>
+            </Card>
+            <Card className="!p-4">
+              <div className="text-xs text-ink-soft">A receber</div>
+              <div className="text-xl font-bold text-amber-400 mt-0.5">
+                {formatBRL(totalAReceber)}
+              </div>
+            </Card>
+          </div>
+
+          {/* Linha fixa Greenn + tabela */}
+          <Card className="!p-0 overflow-hidden">
+            {/* Header da tabela */}
+            <div className="border-b border-line/60 px-4 py-2.5 grid grid-cols-12 gap-2 text-[11px] text-ink-dim uppercase tracking-wider bg-surface/50">
+              <div className="col-span-3">Origem / Produto</div>
+              <div className="col-span-2">Data venda</div>
+              <div className="col-span-2 text-right">Faturamento</div>
+              <div className="col-span-2 text-right">Recebido</div>
+              <div className="col-span-3">Status</div>
+            </div>
+
+            <GreennLine
+              disponivel={greenn.disponivel}
+              pendente={greenn.pendente}
+              antecipavel={greenn.antecipavel}
+              capturadoEm={greenn.capturado_em}
+            />
+
+            {receitas.length === 0 ? (
+              <div className="text-sm text-ink-dim text-center py-8">
+                Nenhuma receita lançada ainda.
+              </div>
+            ) : (
+              receitas.map((r) => (
+                <div
+                  key={r.id}
+                  className="border-b border-line/40 last:border-0 px-4 py-3 grid grid-cols-12 gap-2 text-sm hover:bg-elevated/30"
+                >
+                  <div className="col-span-3 min-w-0">
+                    <div className="font-medium truncate">
+                      {r.produto_nome ?? "(sem descrição)"}
+                    </div>
+                    <div className="text-[10px] text-ink-dim mt-0.5 uppercase">
+                      {r.origem ?? "—"}
+                    </div>
+                  </div>
+                  <div className="col-span-2 text-ink-soft text-xs">
+                    {formatDate(r.data_venda)}
+                  </div>
+                  <div className="col-span-2 text-right font-medium">
+                    {formatBRL(Number(r.valor_liquido))}
+                  </div>
+                  <div className="col-span-2 text-right">
+                    {r.status === "recebido" ? (
+                      <span className="text-positive font-medium">
+                        {formatBRL(Number(r.valor_liquido))}
+                      </span>
+                    ) : (
+                      <span className="text-ink-dim">—</span>
+                    )}
+                  </div>
+                  <div className="col-span-3">
+                    <span
+                      className={`text-[10px] uppercase tracking-wider rounded px-1.5 py-0.5 ${
+                        r.status === "recebido"
+                          ? "bg-positive/15 text-positive"
+                          : "bg-amber-400/15 text-amber-400 border border-amber-400/30"
+                      }`}
+                    >
+                      {r.status}
+                    </span>
+                    {r.data_recebimento && (
+                      <span className="text-[10px] text-ink-dim ml-2">
+                        em {formatDate(r.data_recebimento)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </Card>
+
+          <div className="mt-4 flex items-center gap-2 text-[11px] text-ink-dim">
+            <Sparkles className="h-3 w-3" />
+            Dica: pra registrar nova venda Greenn, clica em "Nova receita" e escolhe o tipo
+            "Receita Greenn". O saldo da plataforma (em caixa / a receber) atualiza via paste de
+            print na linha verde acima.
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
