@@ -2,41 +2,213 @@ import { createClient } from "@/lib/supabase/server";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import { Card } from "@/components/ui/card";
-import { getSaldosContas, getSaldoGreenn, getResumoMes } from "@/lib/queries";
+import { MesFilter } from "@/components/mes-filter";
+import { GreennUpdateButton } from "@/components/greenn-update-button";
+import { getSaldoGreenn } from "@/lib/queries";
 import { projetar6Meses } from "@/lib/projecao";
-import { CONTAS_ATIVAS } from "@/lib/constants";
+import { CONTAS_ATIVAS, CONTAS_ATIVAS_IDS } from "@/lib/constants";
 import { formatBRL, formatBRLCompact } from "@/lib/formatters";
 import { cn } from "@/lib/utils";
 import {
-  ArrowUpRight,
-  ArrowDownRight,
-  Wallet,
   TrendingUp,
   TrendingDown,
   Clock,
   Sparkles,
+  CheckCircle,
 } from "lucide-react";
-import { GreennUpdateButton } from "@/components/greenn-update-button";
 
 export const dynamic = "force-dynamic";
 
-export default async function DashboardPage() {
+function rangeFromMonth(mesIso: string): { inicio: string; fim: string; label: string } {
+  const [y, m] = mesIso.split("-").map(Number);
+  const inicio = new Date(y, m - 1, 1);
+  const fim = new Date(y, m, 0);
+  const label = inicio
+    .toLocaleDateString("pt-BR", { month: "long", year: "numeric" })
+    .replace(/^./, (c) => c.toUpperCase());
+  return {
+    inicio: inicio.toISOString().slice(0, 10),
+    fim: fim.toISOString().slice(0, 10),
+    label,
+  };
+}
+
+function ocorrenciasMensal(rec: { frequencia: string; data_inicio: string | null }, inicioStr: string): number {
+  if (!rec.data_inicio) return 1;
+  const [iy, im] = inicioStr.split("-").map(Number);
+  const mesInicio = new Date(iy, im - 1, 1);
+  const di = new Date(rec.data_inicio);
+  if (di > mesInicio) return 0;
+  switch (rec.frequencia) {
+    case "mensal":
+      return 1;
+    case "semanal":
+      return 4;
+    case "quinzenal":
+      return 2;
+    case "bimestral": {
+      const diff =
+        (mesInicio.getFullYear() - di.getFullYear()) * 12 +
+        (mesInicio.getMonth() - di.getMonth());
+      return diff >= 0 && diff % 2 === 0 ? 1 : 0;
+    }
+    default:
+      return 1;
+  }
+}
+
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ m?: string }>;
+}) {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const [contas, greenn, resumo, projecao] = await Promise.all([
-    getSaldosContas(),
-    getSaldoGreenn(),
-    getResumoMes(),
-    projetar6Meses(),
-  ]);
+  const params = await searchParams;
+  const hoje = new Date();
+  const mesAtual = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}`;
+  const mes = params.m ?? mesAtual;
+  const { inicio, fim, label: mesLabel } = rangeFromMonth(mes);
 
-  const saldoTotal = contas.reduce((s, c) => s + c.saldo, 0);
-  const aReceberGreenn = greenn.disponivel + greenn.pendente;
-  const resultadoMes =
-    resumo.faturamento - resumo.despesasPagas - resumo.despesasPrevistas;
+  // 1. Greenn snapshot
+  const greenn = await getSaldoGreenn();
+
+  // 2. Receitas do mês — Caixa (recebidas + previstas) — lógica = tab Caixa de /receitas
+  const orFilter = `and(data_recebimento.gte.${inicio},data_recebimento.lte.${fim}),and(data_prevista_pagamento.gte.${inicio},data_prevista_pagamento.lte.${fim},status.neq.recebido)`;
+  const receRes = await supabase
+    .from("receitas_brutas")
+    .select("id, valor_liquido, data_recebimento, data_prevista_pagamento, status")
+    .or(orFilter);
+  const receitas = (receRes.data ?? []) as Array<{
+    valor_liquido: number | string;
+    data_recebimento: string | null;
+    data_prevista_pagamento: string | null;
+    status: string;
+  }>;
+  const entradasMes = receitas.reduce((s, r) => s + Number(r.valor_liquido), 0);
+  const jaEntrou = receitas
+    .filter((r) => r.status === "recebido")
+    .reduce((s, r) => s + Number(r.valor_liquido), 0);
+  const vaiEntrar = entradasMes - jaEntrou;
+
+  // 3. Despesas do mês — replicando lógica da tab Geral de /despesas
+  // 3a. Avulsas (sem recorrencia_id, não parceladas)
+  const avulsasRes = await supabase
+    .from("transacoes")
+    .select("valor, status")
+    .in("conta_id", [...CONTAS_ATIVAS_IDS])
+    .eq("tipo", "despesa")
+    .is("recorrencia_id", null)
+    .eq("parcelado", false)
+    .gte("data_competencia", inicio)
+    .lte("data_competencia", fim);
+  const avulsas = (avulsasRes.data ?? []) as Array<{
+    valor: number | string;
+    status: string;
+  }>;
+  let avulsasPago = 0;
+  let avulsasPrevisto = 0;
+  for (const t of avulsas) {
+    const v = Number(t.valor);
+    if (t.status === "paga" || t.status === "confirmada") avulsasPago += v;
+    else avulsasPrevisto += v;
+  }
+
+  // 3b. Transações vinculadas (recorrência ou parcela)
+  const recTxRes = await supabase
+    .from("transacoes")
+    .select("valor, status, parcelado, recorrencia_id")
+    .in("conta_id", [...CONTAS_ATIVAS_IDS])
+    .eq("tipo", "despesa")
+    .gte("data_competencia", inicio)
+    .lte("data_competencia", fim);
+  const recTx = (recTxRes.data ?? []) as Array<{
+    valor: number | string;
+    status: string;
+    parcelado: boolean | null;
+    recorrencia_id: string | null;
+  }>;
+  const recsMat = new Set(
+    recTx.filter((t) => t.recorrencia_id).map((t) => t.recorrencia_id!)
+  );
+  let recPago = 0;
+  let recPrevisto = 0;
+  let bucketsUsado = 0;
+  for (const t of recTx) {
+    if (!t.recorrencia_id && !t.parcelado) continue;
+    const v = Number(t.valor);
+    // Se está vinculada a bucket, conta como "usado de bucket"
+    // (precisamos saber qual recorrencia é bucket — vamos buscar abaixo)
+    if (t.status === "paga" || t.status === "confirmada") recPago += v;
+    else recPrevisto += v;
+  }
+
+  // 3c. Recorrências ativas (fixas + buckets)
+  const recAtivasRes = await supabase
+    .from("recorrencias")
+    .select("id, valor_padrao, frequencia, data_inicio, tipo_valor, ativo")
+    .in("conta_id", [...CONTAS_ATIVAS_IDS])
+    .eq("tipo", "despesa")
+    .eq("ativo", true);
+  const recAtivas = (recAtivasRes.data ?? []) as Array<{
+    id: string;
+    valor_padrao: number | string;
+    frequencia: string;
+    data_inicio: string | null;
+    tipo_valor: string | null;
+  }>;
+  const fixas = recAtivas.filter((r) => r.tipo_valor !== "bucket");
+  const buckets = recAtivas.filter((r) => r.tipo_valor === "bucket");
+  const bucketIds = new Set(buckets.map((b) => b.id));
+
+  // Re-calcula recPago/recPrevisto separando bucket
+  recPago = 0;
+  recPrevisto = 0;
+  bucketsUsado = 0;
+  for (const t of recTx) {
+    if (!t.recorrencia_id && !t.parcelado) continue;
+    const v = Number(t.valor);
+    if (t.recorrencia_id && bucketIds.has(t.recorrencia_id)) {
+      // Tudo que é vinculado a bucket conta como "bucketsUsado" (independente do status)
+      bucketsUsado += v;
+    } else if (t.status === "paga" || t.status === "confirmada") {
+      recPago += v;
+    } else {
+      recPrevisto += v;
+    }
+  }
+
+  // Fixas que ainda não materializaram no mês — soma valor_padrao × ocorrências
+  const fixasNaoMatTotal = fixas
+    .filter((r) => !recsMat.has(r.id))
+    .filter((r) => ocorrenciasMensal(r, inicio) > 0)
+    .reduce((s, r) => s + Number(r.valor_padrao) * ocorrenciasMensal(r, inicio), 0);
+
+  // Buckets ativos no mês — teto total
+  const bucketsTeto = buckets
+    .filter((b) => ocorrenciasMensal(b, inicio) > 0)
+    .reduce((s, b) => s + Number(b.valor_padrao), 0);
+
+  // 4. Totais finais
+  // Despesas previstas = Tudo que tá previsto pra cair no mês (incluindo tetos cheios de bucket)
+  const despesasPrevistas =
+    avulsasPrevisto + recPrevisto + fixasNaoMatTotal + bucketsTeto;
+
+  // Despesas reais = O que efetivamente foi gasto/lançado
+  // - Avulsas (todas, pago + previsto)
+  // - Recorrentes/parcelas (todas)
+  // - Buckets: só o USADO (não o teto)
+  const despesasReais =
+    avulsasPago + avulsasPrevisto + recPago + recPrevisto + bucketsUsado;
+
+  // Resultado = entradas - despesas reais
+  const resultadoMes = entradasMes - despesasReais;
+
+  // 5. Projeção 6 meses (continua igual)
+  const projecao = await projetar6Meses();
 
   return (
     <div className="min-h-screen flex bg-bg">
@@ -47,64 +219,77 @@ export default async function DashboardPage() {
 
         <div className="p-6 lg:p-8 max-w-[1400px]">
           {/* Header */}
-          <div className="flex items-center justify-between mb-6">
-            <h1 className="text-2xl font-semibold tracking-tight">Visão geral</h1>
-            <button className="text-sm text-ink-soft border border-line/60 rounded-lg px-3 py-1.5 hover:bg-surface">
-              Hoje ▾
-            </button>
+          <div className="flex items-start justify-between mb-6 flex-wrap gap-3">
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight">Visão geral</h1>
+              <p className="text-xs text-ink-dim mt-1">
+                Referência: <strong>{mesLabel}</strong>
+              </p>
+            </div>
+            <MesFilter mes={mes} basePath={`/`} />
           </div>
 
-          {/* KPIs row */}
+          {/* 4 KPIs principais */}
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
-            <Kpi
-              label="Saldo total"
-              valor={formatBRL(saldoTotal)}
-              delta={null}
-              icon={<Wallet className="h-4 w-4" />}
-            />
-            <Kpi
-              label="Faturamento do mês"
-              valor={formatBRL(resumo.faturamento)}
-              delta={{ pos: true, txt: "Greenn + manual" }}
-              icon={<TrendingUp className="h-4 w-4" />}
-            />
-            <Kpi
-              label="Despesas do mês"
-              valor={formatBRL(resumo.despesasPagas + resumo.despesasPrevistas)}
-              hint={`pago ${formatBRLCompact(resumo.despesasPagas)} · previsto ${formatBRLCompact(resumo.despesasPrevistas)}`}
-              icon={<TrendingDown className="h-4 w-4" />}
-            />
-            <Kpi
-              label="Resultado do mês"
-              valor={formatBRL(resultadoMes)}
-              delta={resultadoMes >= 0 ? { pos: true, txt: "Positivo" } : { pos: false, txt: "Negativo" }}
-              icon={<Sparkles className="h-4 w-4" />}
-            />
+            <Card>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs text-ink-soft">Entradas do mês</span>
+                <TrendingUp className="h-4 w-4 text-positive" />
+              </div>
+              <div className="text-2xl font-bold tracking-tight text-positive">
+                {formatBRL(entradasMes)}
+              </div>
+              <div className="text-[11px] text-ink-dim mt-1">
+                <span className="text-positive">{formatBRLCompact(jaEntrou)}</span> recebido ·{" "}
+                <span className="text-amber-400">{formatBRLCompact(vaiEntrar)}</span> a receber
+              </div>
+            </Card>
+
+            <Card>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs text-ink-soft">Despesas previstas</span>
+                <Clock className="h-4 w-4 text-amber-400" />
+              </div>
+              <div className="text-2xl font-bold tracking-tight">
+                {formatBRL(despesasPrevistas)}
+              </div>
+              <div className="text-[11px] text-ink-dim mt-1">
+                a pagar + tetos de bucket
+              </div>
+            </Card>
+
+            <Card>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs text-ink-soft">Despesas reais</span>
+                <TrendingDown className="h-4 w-4 text-negative" />
+              </div>
+              <div className="text-2xl font-bold tracking-tight text-negative">
+                {formatBRL(despesasReais)}
+              </div>
+              <div className="text-[11px] text-ink-dim mt-1">
+                lançado (avulsas + recorrentes + bucket usado)
+              </div>
+            </Card>
+
+            <Card>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs text-ink-soft">Resultado do mês</span>
+                <CheckCircle className={cn("h-4 w-4", resultadoMes >= 0 ? "text-positive" : "text-negative")} />
+              </div>
+              <div className={cn(
+                "text-2xl font-bold tracking-tight",
+                resultadoMes >= 0 ? "text-positive" : "text-negative"
+              )}>
+                {formatBRL(resultadoMes)}
+              </div>
+              <div className="text-[11px] text-ink-dim mt-1">
+                entradas − despesas reais
+              </div>
+            </Card>
           </div>
 
-          {/* Contas grid */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
-            {contas.map((c) => (
-              <Card key={c.id}>
-                <div className="flex items-center justify-between mb-3">
-                  <div>
-                    <div className="text-sm text-ink-soft">{c.nome}</div>
-                    <div className="text-[11px] text-ink-dim">{c.apelido}</div>
-                  </div>
-                  <span
-                    className="h-2.5 w-2.5 rounded-full"
-                    style={{ background: c.cor, boxShadow: `0 0 12px ${c.cor}66` }}
-                  />
-                </div>
-                <div className="text-2xl font-bold tracking-tight">{formatBRL(c.saldo)}</div>
-                <div className="text-[11px] text-ink-dim mt-1">Saldo atual</div>
-              </Card>
-            ))}
-          </div>
-
-          {/* Greenn + Recente */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            {/* Greenn card destaque */}
+          {/* Greenn + Próximos vencimentos */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-5">
             <Card variant="lime" className="lg:col-span-2 relative overflow-hidden">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
@@ -122,18 +307,20 @@ export default async function DashboardPage() {
 
               <div className="grid grid-cols-3 gap-4">
                 <GreennCol label="Em caixa" valor={greenn.disponivel} />
-                <GreennCol label="A receber" valor={aReceberGreenn} />
+                <GreennCol label="A receber" valor={greenn.disponivel + greenn.pendente} />
                 <GreennCol label="Antecipável" valor={greenn.antecipavel} dim />
               </div>
 
-              <div className="mt-5 text-xs">
+              <div className="mt-5 text-xs flex items-center justify-between gap-3">
                 <GreennUpdateButton className="bg-bg text-lime rounded-lg px-3 py-1.5 font-semibold hover:bg-bg/80">
                   Atualizar saldo
                 </GreennUpdateButton>
+                <span className="text-[10px] text-bg/60">
+                  ⚠️ saldo Greenn não entra automático em &quot;Entradas&quot; — lance saques como receita avulsa
+                </span>
               </div>
             </Card>
 
-            {/* Próxima movimentação placeholder */}
             <Card>
               <div className="flex items-center justify-between mb-3">
                 <span className="text-sm font-semibold">Próximos vencimentos</span>
@@ -146,130 +333,93 @@ export default async function DashboardPage() {
           </div>
 
           {/* Projeção 6 meses */}
-          <div className="mt-5">
-            <Card className="!p-0 overflow-hidden">
-              <div className="px-5 pt-5 pb-3">
-                <h2 className="text-sm font-semibold">Projeção de caixa — 6 meses</h2>
-                <p className="text-xs text-ink-dim mt-0.5">
-                  Saldo no fim de cada mês = saldo anterior − despesas previstas + receitas a receber
-                </p>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm min-w-[700px]">
-                  <thead>
-                    <tr className="border-y border-line/60 bg-surface/50 text-[11px] text-ink-dim uppercase tracking-wider">
-                      <th className="text-left px-5 py-2 font-medium">Conta</th>
-                      {projecao.map((m) => (
-                        <th
-                          key={m.mesIso}
-                          className="text-right px-3 py-2 font-medium whitespace-nowrap"
-                        >
-                          {m.label}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {CONTAS_ATIVAS.map((c) => (
-                      <tr key={c.id} className="border-b border-line/40 last:border-0">
-                        <td className="px-5 py-3">
-                          <span className="inline-flex items-center gap-2 text-sm">
-                            <span
-                              className="h-2 w-2 rounded-full"
-                              style={{ background: c.cor }}
-                            />
-                            {c.nome}
-                          </span>
-                        </td>
-                        {projecao.map((m) => {
-                          const v = m.porConta[c.id] ?? 0;
-                          return (
-                            <td
-                              key={m.mesIso}
-                              className={cn(
-                                "px-3 py-3 text-right whitespace-nowrap font-medium",
-                                v < 0 ? "text-negative" : v === 0 ? "text-ink-dim" : "text-ink"
-                              )}
-                            >
-                              {formatBRLCompact(v)}
-                            </td>
-                          );
-                        })}
-                      </tr>
+          <Card className="!p-0 overflow-hidden">
+            <div className="px-5 pt-5 pb-3">
+              <h2 className="text-sm font-semibold">Projeção de caixa — 6 meses</h2>
+              <p className="text-xs text-ink-dim mt-0.5">
+                Saldo no fim de cada mês = saldo anterior − despesas previstas + receitas a receber
+              </p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[700px]">
+                <thead>
+                  <tr className="border-y border-line/60 bg-surface/50 text-[11px] text-ink-dim uppercase tracking-wider">
+                    <th className="text-left px-5 py-2 font-medium">Conta</th>
+                    {projecao.map((m) => (
+                      <th
+                        key={m.mesIso}
+                        className="text-right px-3 py-2 font-medium whitespace-nowrap"
+                      >
+                        {m.label}
+                      </th>
                     ))}
-                    <tr className="bg-lime/[0.05]">
-                      <td className="px-5 py-3 text-sm font-semibold text-lime">
-                        Total (com receitas)
+                  </tr>
+                </thead>
+                <tbody>
+                  {CONTAS_ATIVAS.map((c) => (
+                    <tr key={c.id} className="border-b border-line/40 last:border-0">
+                      <td className="px-5 py-3">
+                        <span className="inline-flex items-center gap-2 text-sm">
+                          <span
+                            className="h-2 w-2 rounded-full"
+                            style={{ background: c.cor }}
+                          />
+                          {c.nome}
+                        </span>
                       </td>
-                      {projecao.map((m) => (
-                        <td
-                          key={m.mesIso}
-                          className={cn(
-                            "px-3 py-3 text-right whitespace-nowrap font-bold",
-                            m.totalSaldo < 0 ? "text-negative" : "text-lime"
-                          )}
-                        >
-                          {formatBRLCompact(m.totalSaldo)}
-                        </td>
-                      ))}
+                      {projecao.map((m) => {
+                        const v = m.porConta[c.id] ?? 0;
+                        return (
+                          <td
+                            key={m.mesIso}
+                            className={cn(
+                              "px-3 py-3 text-right whitespace-nowrap font-medium",
+                              v < 0 ? "text-negative" : v === 0 ? "text-ink-dim" : "text-ink"
+                            )}
+                          >
+                            {formatBRLCompact(v)}
+                          </td>
+                        );
+                      })}
                     </tr>
-                  </tbody>
-                </table>
+                  ))}
+                  <tr className="bg-lime/[0.05]">
+                    <td className="px-5 py-3 text-sm font-semibold text-lime">
+                      Total (com receitas)
+                    </td>
+                    {projecao.map((m) => (
+                      <td
+                        key={m.mesIso}
+                        className={cn(
+                          "px-3 py-3 text-right whitespace-nowrap font-bold",
+                          m.totalSaldo < 0 ? "text-negative" : "text-lime"
+                        )}
+                      >
+                        {formatBRLCompact(m.totalSaldo)}
+                      </td>
+                    ))}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div className="px-5 py-3 border-t border-line/60 grid grid-cols-2 gap-4 text-xs text-ink-soft">
+              <div>
+                <span className="text-ink-dim">Despesas previstas (6m):</span>{" "}
+                <span className="text-negative font-medium">
+                  {formatBRL(projecao.reduce((s, m) => s + m.totalDespesas, 0))}
+                </span>
               </div>
-              <div className="px-5 py-3 border-t border-line/60 grid grid-cols-2 gap-4 text-xs text-ink-soft">
-                <div>
-                  <span className="text-ink-dim">Despesas previstas (6m):</span>{" "}
-                  <span className="text-negative font-medium">
-                    {formatBRL(projecao.reduce((s, m) => s + m.totalDespesas, 0))}
-                  </span>
-                </div>
-                <div className="text-right">
-                  <span className="text-ink-dim">Receitas a receber (6m):</span>{" "}
-                  <span className="text-positive font-medium">
-                    {formatBRL(projecao.reduce((s, m) => s + m.totalReceitas, 0))}
-                  </span>
-                </div>
+              <div className="text-right">
+                <span className="text-ink-dim">Receitas a receber (6m):</span>{" "}
+                <span className="text-positive font-medium">
+                  {formatBRL(projecao.reduce((s, m) => s + m.totalReceitas, 0))}
+                </span>
               </div>
-            </Card>
-          </div>
+            </div>
+          </Card>
         </div>
       </main>
     </div>
-  );
-}
-
-function Kpi({
-  label,
-  valor,
-  delta,
-  hint,
-  icon,
-}: {
-  label: string;
-  valor: string;
-  delta?: { pos: boolean; txt: string } | null;
-  hint?: string;
-  icon?: React.ReactNode;
-}) {
-  return (
-    <Card>
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-xs text-ink-soft">{label}</span>
-        <span className="text-ink-dim">{icon}</span>
-      </div>
-      <div className="text-2xl font-bold tracking-tight">{valor}</div>
-      {delta && (
-        <div className="flex items-center gap-1 mt-1 text-[11px]">
-          {delta.pos ? (
-            <ArrowUpRight className="h-3 w-3 text-positive" />
-          ) : (
-            <ArrowDownRight className="h-3 w-3 text-negative" />
-          )}
-          <span className={delta.pos ? "text-positive" : "text-negative"}>{delta.txt}</span>
-        </div>
-      )}
-      {hint && <div className="text-[11px] text-ink-dim mt-1">{hint}</div>}
-    </Card>
   );
 }
 
