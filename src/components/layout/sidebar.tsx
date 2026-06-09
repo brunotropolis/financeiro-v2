@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   PlusCircle,
-  Repeat,
+  Receipt,
   TrendingUp,
   List,
   Search,
@@ -18,7 +18,7 @@ const NAV = [
   { section: "DASHBOARDS", items: [
     { href: "/", label: "Visão geral", icon: LayoutDashboard },
     { href: "/lancar", label: "Lançar", icon: PlusCircle },
-    { href: "/recorrentes", label: "Recorrentes", icon: Repeat },
+    { href: "/despesas", label: "Despesas", icon: Receipt },
     { href: "/receitas", label: "Receitas", icon: TrendingUp },
     { href: "/lancamentos", label: "Lançamentos", icon: List },
   ]},
