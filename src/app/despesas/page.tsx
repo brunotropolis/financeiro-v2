@@ -1046,7 +1046,9 @@ async function GeralTab({
   // - Pra simplificar: recPago + recPrevisto (excluindo parceladas e buckets, já filtrado acima)
   //   + fixasNaoMatTotal
   const fixasPago = recPago; // recorrentes pagas (recPago já exclui buckets)
-  const fixasPrevisto = recPrevisto + fixasNaoMatTotal;
+  // Previsto fixo = recorrentes previstas (já materializadas) + fixas não materializadas
+  // + tetos buckets ativos (também são compromissos firmes do mês)
+  const fixasPrevisto = recPrevisto + bucketsTeto;
   const fixasTotal = fixasPago + fixasPrevisto;
 
   // Já pago no mês (incluindo Meta Ads, que é "saiu da conta" automaticamente)
@@ -1069,12 +1071,12 @@ async function GeralTab({
           </div>
         </Card>
         <Card className="!p-4">
-          <div className="text-xs text-ink-soft">Previsto fixo</div>
+          <div className="text-xs text-ink-soft">Previsto fixo + buckets</div>
           <div className="text-2xl font-bold text-amber-400 mt-0.5">
             {formatBRL(fixasPrevisto)}
           </div>
           <div className="text-[10px] text-ink-dim mt-0.5">
-            das fixas, ainda a pagar
+            fixas a pagar + tetos de bucket
           </div>
         </Card>
         <Card className="!p-4">

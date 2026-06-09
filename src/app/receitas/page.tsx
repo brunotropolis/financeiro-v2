@@ -130,7 +130,7 @@ export default async function ReceitasPage({
             <div className="flex items-center gap-3 flex-wrap">
               <MesFilter mes={mes} basePath={`/receitas?tab=${tab}`} />
               <Link
-                href="/lancar"
+                href="/lancar?tipo=receita_avulsa"
                 className="inline-flex items-center gap-1.5 text-xs bg-lime text-bg font-semibold rounded-lg px-3 py-2 hover:bg-lime-glow h-10"
               >
                 <PlusCircle className="h-3.5 w-3.5" />

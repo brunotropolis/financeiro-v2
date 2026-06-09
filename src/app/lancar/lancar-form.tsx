@@ -73,15 +73,17 @@ export function LancarForm({
   origens,
   projetos,
   buckets,
+  tipoInicial,
 }: {
   categoriasDespesa: CategoriaItem[];
   categoriasReceita: CategoriaItem[];
   origens: OrigemItem[];
   projetos: ProjetoItem[];
   buckets: BucketItem[];
+  tipoInicial?: Tipo;
 }) {
   const router = useRouter();
-  const [tipo, setTipo] = useState<Tipo>("despesa_avulsa");
+  const [tipo, setTipo] = useState<Tipo>(tipoInicial ?? "despesa_avulsa");
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [sucesso, setSucesso] = useState<string | null>(null);

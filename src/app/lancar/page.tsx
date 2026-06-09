@@ -6,7 +6,30 @@ import { LancarForm } from "./lancar-form";
 
 export const dynamic = "force-dynamic";
 
-export default async function LancarPage() {
+type TipoQuery =
+  | "despesa_avulsa"
+  | "despesa_recorrente"
+  | "despesa_parcelada"
+  | "despesa_bucket"
+  | "receita_avulsa";
+
+const TIPOS_VALIDOS: TipoQuery[] = [
+  "despesa_avulsa",
+  "despesa_recorrente",
+  "despesa_parcelada",
+  "despesa_bucket",
+  "receita_avulsa",
+];
+
+export default async function LancarPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tipo?: string }>;
+}) {
+  const params = await searchParams;
+  const tipoInicial: TipoQuery = TIPOS_VALIDOS.includes(params.tipo as TipoQuery)
+    ? (params.tipo as TipoQuery)
+    : "despesa_avulsa";
   const supabase = await createClient();
   const {
     data: { user },
@@ -42,6 +65,7 @@ export default async function LancarPage() {
             origens={origens}
             projetos={projetos}
             buckets={buckets}
+            tipoInicial={tipoInicial}
           />
         </div>
       </main>
