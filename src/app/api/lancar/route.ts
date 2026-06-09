@@ -110,18 +110,25 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+      const dataInicio =
+        body.data_competencia ?? new Date().toISOString().slice(0, 10);
+      // bucket não tem vencimento próprio — usa o dia do data_inicio só pra
+      // satisfazer NOT NULL no schema (campo é ignorado na lógica de bucket)
+      const diaDoMes = Number(dataInicio.slice(8, 10)) || 1;
+
       const { error } = await db.from("recorrencias").insert([
         {
           nome: body.descricao ?? "(bucket sem nome)",
           tipo: "despesa",
           valor_padrao: valor,
           frequencia: freqBucket,
+          dia_vencimento: diaDoMes,
           tipo_valor: "bucket",
           entidade_id,
           categoria_id: body.categoria_id,
           conta_id,
           projeto_id: body.projeto_id ?? null,
-          data_inicio: body.data_competencia ?? new Date().toISOString().slice(0, 10),
+          data_inicio: dataInicio,
           ativo: true,
           ...audit,
         },
@@ -129,7 +136,7 @@ export async function POST(request: NextRequest) {
       if (error) throw new Error(error.message);
       return NextResponse.json({
         ok: true,
-        message: `Bucket criado: teto mensal R$ ${valor.toFixed(2)}.`,
+        message: `Bucket criado: teto ${freqBucket} R$ ${valor.toFixed(2)}.`,
       });
     }
 
