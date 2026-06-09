@@ -109,6 +109,7 @@ export function LancarForm({
   const [origemId, setOrigemId] = useState("");
   const [competencia, setCompetencia] = useState(() => new Date().toISOString().slice(0, 7));
   const [dataRecebimento, setDataRecebimento] = useState("");
+  const [dataPrevista, setDataPrevista] = useState("");
   const [statusReceita, setStatusReceita] = useState<"previsto" | "recebido">("previsto");
 
   const isDespesa = tipo.startsWith("despesa");
@@ -168,6 +169,9 @@ export function LancarForm({
         payload.status = statusReceita;
         if (statusReceita === "recebido" || dataRecebimento) {
           payload.data_recebimento = dataRecebimento || data;
+        }
+        if (dataPrevista) {
+          payload.data_prevista_pagamento = dataPrevista;
         }
       }
 
@@ -433,6 +437,16 @@ export function LancarForm({
                 <option value="recebido">Já em caixa</option>
               </select>
             </Row>
+            {statusReceita === "previsto" && (
+              <Row label="Data prevista do pagamento">
+                <input
+                  type="date"
+                  value={dataPrevista}
+                  onChange={(e) => setDataPrevista(e.target.value)}
+                  className="w-full bg-bg border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-lime"
+                />
+              </Row>
+            )}
             {statusReceita === "recebido" && (
               <Row label="Data do recebimento">
                 <input

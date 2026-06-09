@@ -24,6 +24,7 @@ type Payload = {
   produto_nome?: string | null;
   data_venda?: string;
   data_recebimento?: string;
+  data_prevista_pagamento?: string;
 };
 
 function addMonths(isoDate: string, n: number): string {
@@ -208,6 +209,7 @@ export async function POST(request: NextRequest) {
           taxas: 0,
           valor_liquido: valor,
           data_venda: body.data_venda ?? new Date().toISOString().slice(0, 10),
+          data_prevista_pagamento: body.data_prevista_pagamento ?? null,
           data_recebimento: body.data_recebimento ?? null,
           status: body.data_recebimento ? "recebido" : (body.status ?? "previsto"),
           parcelas: 1,
