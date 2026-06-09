@@ -7,6 +7,7 @@ import {
   PlusCircle,
   Receipt,
   TrendingUp,
+  BarChart3,
   List,
   Search,
   Settings,
@@ -20,6 +21,7 @@ const NAV = [
     { href: "/lancar", label: "Lançar", icon: PlusCircle },
     { href: "/despesas", label: "Despesas", icon: Receipt },
     { href: "/receitas", label: "Receitas", icon: TrendingUp },
+    { href: "/historico", label: "Histórico", icon: BarChart3 },
     { href: "/lancamentos", label: "Lançamentos", icon: List },
   ]},
   { section: "AJUSTES", items: [

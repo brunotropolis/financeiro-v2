@@ -6,7 +6,6 @@ import { createClient } from "@/lib/supabase/server";
 import { getSaldoGreenn } from "@/lib/queries";
 import { getProjetos, getOrigens } from "@/lib/catalog";
 import { formatBRL, formatDate } from "@/lib/formatters";
-import { GreennLine } from "./greenn-line";
 import { ReceitasTabs } from "./tabs";
 import { MesFilter } from "@/components/mes-filter";
 import { EditButton } from "@/components/edit-button";
@@ -233,14 +232,7 @@ export default async function ReceitasPage({
               <div className="col-span-1 text-right">Ações</div>
             </div>
 
-            {tab === "faturamento" && (
-              <GreennLine
-                disponivel={greenn.disponivel}
-                pendente={greenn.pendente}
-                antecipavel={greenn.antecipavel}
-                capturadoEm={greenn.capturado_em}
-              />
-            )}
+            {/* Greenn não aparece mais em Faturamento — só dados manuais lançados */}
 
             {receitas.length === 0 ? (
               <div className="text-sm text-ink-dim text-center py-8">
