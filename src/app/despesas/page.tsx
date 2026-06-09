@@ -81,7 +81,10 @@ export default async function DespesasPage({
   } = await supabase.auth.getUser();
 
   const params = await searchParams;
-  const tab = params.tab === "recorrentes" ? "recorrentes" : "avulsas";
+  const tab =
+    params.tab === "recorrentes" || params.tab === "buckets"
+      ? params.tab
+      : "avulsas";
   const hoje = new Date();
   const mesAtual = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}`;
   const mes = params.m ?? mesAtual;
@@ -121,7 +124,7 @@ export default async function DespesasPage({
           <DespesasTabs current={tab} mes={mes} />
 
           <div className="mt-5">
-            {tab === "avulsas" ? (
+            {tab === "avulsas" && (
               <AvulsasTab
                 supabase={supabase}
                 inicio={inicio}
@@ -131,8 +134,20 @@ export default async function DespesasPage({
                 catList={catList}
                 projetos={projetos}
               />
-            ) : (
+            )}
+            {tab === "recorrentes" && (
               <RecorrentesTab
+                supabase={supabase}
+                inicio={inicio}
+                fim={fim}
+                catMap={catMap}
+                projMap={projMap}
+                catList={catList}
+                projetos={projetos}
+              />
+            )}
+            {tab === "buckets" && (
+              <BucketsTab
                 supabase={supabase}
                 inicio={inicio}
                 fim={fim}
@@ -387,9 +402,6 @@ async function RecorrentesTab({
   const fixas = todasAtivas
     .filter((r) => r.tipo_valor !== "bucket")
     .filter((r) => ocorrenciasNoMes(r, inicio) > 0);
-  const buckets = todasAtivas
-    .filter((r) => r.tipo_valor === "bucket")
-    .filter((r) => ocorrenciasBucketNoMes(r, inicio) > 0);
 
   // Parceladas futuras
   const parRes = await supabase
@@ -469,12 +481,8 @@ async function RecorrentesTab({
     const oc = ocorrenciasNoMes(f, inicio);
     previstoMes += Number(f.valor_padrao) * oc;
   }
-  // 4. Buckets — somam teto cheio (bucket é referência, não materializa)
-  for (const b of buckets) {
-    previstoMes += Number(b.valor_padrao);
-  }
 
-  const totalLancamentos = fixas.length + buckets.length + parceladas.length;
+  const totalLancamentos = fixas.length + parceladas.length;
 
   return (
     <>
@@ -484,7 +492,7 @@ async function RecorrentesTab({
           <div className="text-xs text-ink-soft">Lançamentos</div>
           <div className="text-xl font-bold mt-0.5">{totalLancamentos}</div>
           <div className="text-[10px] text-ink-dim mt-0.5">
-            {fixas.length} fixas · {buckets.length} buckets · {parceladas.length} parceladas
+            {fixas.length} fixas · {parceladas.length} parceladas
           </div>
         </Card>
         <Card className="!p-4">
@@ -494,9 +502,6 @@ async function RecorrentesTab({
         <Card className="!p-4">
           <div className="text-xs text-ink-soft">Previsto</div>
           <div className="text-xl font-bold text-negative mt-0.5">{formatBRL(previstoMes)}</div>
-          <div className="text-[10px] text-ink-dim mt-0.5">
-            inclui tetos de bucket
-          </div>
         </Card>
       </div>
 
@@ -597,85 +602,6 @@ async function RecorrentesTab({
         )}
       </section>
 
-      {/* Buckets */}
-      <section className="mb-8">
-        <div className="flex items-center gap-2 mb-3">
-          <PiggyBank className="h-4 w-4 text-lime" />
-          <h2 className="text-sm font-semibold">
-            Buckets no mês
-            <span className="ml-2 text-ink-dim font-normal">({buckets.length})</span>
-          </h2>
-        </div>
-
-        {buckets.length === 0 ? (
-          <EmptyState texto="Nenhum bucket ativo nesse mês." cta="Cria em /lancar → 'Bucket'" />
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {buckets.map((b) => {
-              const cat = b.categoria_id ? catMap.get(b.categoria_id) : null;
-              const proj = b.projeto_id ? projMap.get(b.projeto_id) : null;
-              return (
-                <Card key={b.id}>
-                  <div className="flex items-start justify-between mb-2">
-                    <div className="min-w-0">
-                      <div className="font-medium truncate">{b.nome}</div>
-                      {cat && (
-                        <div className="text-[10px] text-ink-dim mt-0.5">
-                          categoria: {cat.nome}
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] uppercase tracking-wider bg-lime/15 text-lime border border-lime/30 rounded px-1.5 py-0.5">
-                        bucket
-                      </span>
-                      <EditButton
-                        compact
-                        entry={{
-                          kind: "bucket",
-                          id: b.id,
-                          descricao: b.nome,
-                          valor: Number(b.valor_padrao),
-                          conta_id: b.conta_id,
-                          categoria_id: b.categoria_id,
-                          projeto_id: b.projeto_id,
-                          frequencia: b.frequencia,
-                          data_inicio: b.data_inicio ?? undefined,
-                        }}
-                        categorias={catList}
-                        projetos={projetos}
-                      />
-                    </div>
-                  </div>
-                  <div className="flex items-end justify-between mt-3">
-                    <div>
-                      <div className="text-[10px] text-ink-dim">
-                        Teto {b.frequencia ?? "mensal"}
-                      </div>
-                      <div className="text-lg font-bold">{formatBRL(Number(b.valor_padrao))}</div>
-                    </div>
-                    {proj && (
-                      <span className="inline-flex items-center gap-1.5 text-[11px] text-ink-soft">
-                        <span
-                          className="h-1.5 w-1.5 rounded-full"
-                          style={{ background: proj.cor ?? "#71717a" }}
-                        />
-                        {proj.nome}
-                      </span>
-                    )}
-                  </div>
-                  {b.data_inicio && (
-                    <div className="text-[10px] text-ink-dim mt-2 pt-2 border-t border-line/40">
-                      começa em {formatDate(b.data_inicio)}
-                    </div>
-                  )}
-                </Card>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
       {/* Parceladas */}
       <section>
         <div className="flex items-center gap-2 mb-3">
@@ -727,6 +653,209 @@ async function RecorrentesTab({
           </div>
         )}
       </section>
+    </>
+  );
+}
+
+async function BucketsTab({
+  supabase,
+  inicio,
+  fim,
+  catMap,
+  projMap,
+  catList,
+  projetos,
+}: {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  inicio: string;
+  fim: string;
+  catMap: Map<string, { id: string; nome: string; cor_hex: string | null }>;
+  projMap: Map<string, { id: string; nome: string; cor: string | null }>;
+  catList: Array<{ id: string; nome: string }>;
+  projetos: Array<{ id: string; nome: string; cor: string | null }>;
+}) {
+  // Todos buckets cadastrados, filtra pelos ativos no mês
+  const recRes = await supabase
+    .from("recorrencias")
+    .select(
+      "id, nome, valor_padrao, frequencia, dia_vencimento, conta_id, categoria_id, tipo_valor, ativo, projeto_id, data_inicio"
+    )
+    .in("conta_id", [...CONTAS_ATIVAS_IDS])
+    .eq("tipo", "despesa")
+    .eq("tipo_valor", "bucket")
+    .order("nome");
+  const buckets = ((recRes.data ?? []) as RecorrenciaRow[])
+    .filter((r) => r.ativo)
+    .filter((r) => ocorrenciasBucketNoMes(r, inicio) > 0);
+
+  // Despesas avulsas no mês — usadas pra calcular "utilizado" por categoria
+  const txRes = await supabase
+    .from("transacoes")
+    .select("categoria_id, valor")
+    .in("conta_id", [...CONTAS_ATIVAS_IDS])
+    .eq("tipo", "despesa")
+    .is("recorrencia_id", null)
+    .gte("data_competencia", inicio)
+    .lte("data_competencia", fim);
+  const txs = (txRes.data ?? []) as Array<{
+    categoria_id: string | null;
+    valor: number | string;
+  }>;
+
+  // Map categoria_id → total gasto avulso no mês
+  const usoPorCategoria = new Map<string, number>();
+  for (const t of txs) {
+    if (!t.categoria_id) continue;
+    usoPorCategoria.set(
+      t.categoria_id,
+      (usoPorCategoria.get(t.categoria_id) ?? 0) + Number(t.valor)
+    );
+  }
+
+  // Stats agregados
+  const totalTeto = buckets.reduce((s, b) => s + Number(b.valor_padrao), 0);
+  const totalUtilizado = buckets.reduce(
+    (s, b) => s + (b.categoria_id ? usoPorCategoria.get(b.categoria_id) ?? 0 : 0),
+    0
+  );
+  const totalRestante = Math.max(0, totalTeto - totalUtilizado);
+  const pctTotal = totalTeto > 0 ? Math.min(150, (totalUtilizado / totalTeto) * 100) : 0;
+
+  return (
+    <>
+      {/* Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-5">
+        <Card className="!p-4">
+          <div className="text-xs text-ink-soft">Buckets ativos</div>
+          <div className="text-xl font-bold mt-0.5">{buckets.length}</div>
+        </Card>
+        <Card className="!p-4">
+          <div className="text-xs text-ink-soft">Teto total</div>
+          <div className="text-xl font-bold mt-0.5">{formatBRL(totalTeto)}</div>
+        </Card>
+        <Card className="!p-4">
+          <div className="text-xs text-ink-soft">Utilizado</div>
+          <div
+            className={`text-xl font-bold mt-0.5 ${
+              pctTotal > 100 ? "text-negative" : pctTotal > 70 ? "text-amber-400" : "text-positive"
+            }`}
+          >
+            {formatBRL(totalUtilizado)}
+          </div>
+          <div className="text-[10px] text-ink-dim mt-0.5">{pctTotal.toFixed(0)}% do teto</div>
+        </Card>
+        <Card className="!p-4">
+          <div className="text-xs text-ink-soft">Restante</div>
+          <div className="text-xl font-bold mt-0.5">{formatBRL(totalRestante)}</div>
+        </Card>
+      </div>
+
+      {/* Cards */}
+      {buckets.length === 0 ? (
+        <Card>
+          <div className="text-sm text-ink-soft text-center py-8 flex flex-col items-center gap-2">
+            <PiggyBank className="h-6 w-6 text-ink-dim" />
+            <span>Nenhum bucket ativo nesse mês.</span>
+            <a href="/lancar" className="text-lime text-xs underline">
+              Cadastrar em /lancar → Bucket
+            </a>
+          </div>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {buckets.map((b) => {
+            const cat = b.categoria_id ? catMap.get(b.categoria_id) : null;
+            const proj = b.projeto_id ? projMap.get(b.projeto_id) : null;
+            const teto = Number(b.valor_padrao);
+            const usado = b.categoria_id ? usoPorCategoria.get(b.categoria_id) ?? 0 : 0;
+            const restante = Math.max(0, teto - usado);
+            const pct = teto > 0 ? Math.min(150, (usado / teto) * 100) : 0;
+            const barColor =
+              pct > 100 ? "bg-negative" : pct > 70 ? "bg-amber-400" : "bg-lime";
+            const barWidth = Math.min(100, pct);
+
+            return (
+              <Card key={b.id}>
+                <div className="flex items-start justify-between mb-3">
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">{b.nome}</div>
+                    <div className="text-[10px] text-ink-dim mt-0.5 flex items-center gap-2 flex-wrap">
+                      {cat && <span>{cat.nome}</span>}
+                      <span className="opacity-50">·</span>
+                      <span>teto {b.frequencia ?? "mensal"}</span>
+                      {proj && (
+                        <>
+                          <span className="opacity-50">·</span>
+                          <span className="inline-flex items-center gap-1">
+                            <span
+                              className="h-1.5 w-1.5 rounded-full"
+                              style={{ background: proj.cor ?? "#71717a" }}
+                            />
+                            {proj.nome}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <EditButton
+                    compact
+                    entry={{
+                      kind: "bucket",
+                      id: b.id,
+                      descricao: b.nome,
+                      valor: teto,
+                      conta_id: b.conta_id,
+                      categoria_id: b.categoria_id,
+                      projeto_id: b.projeto_id,
+                      frequencia: b.frequencia,
+                      data_inicio: b.data_inicio ?? undefined,
+                    }}
+                    categorias={catList}
+                    projetos={projetos}
+                  />
+                </div>
+
+                {/* Barra de progresso */}
+                <div className="w-full h-2 bg-bg/80 rounded-full overflow-hidden border border-line/40 mb-2">
+                  <div
+                    className={`h-full ${barColor} transition-all`}
+                    style={{ width: `${barWidth}%` }}
+                  />
+                </div>
+
+                <div className="flex items-end justify-between text-xs">
+                  <div>
+                    <div className="text-[10px] text-ink-dim">Utilizado</div>
+                    <div
+                      className={`font-semibold ${
+                        pct > 100 ? "text-negative" : pct > 70 ? "text-amber-400" : "text-positive"
+                      }`}
+                    >
+                      {formatBRL(usado)} <span className="text-ink-dim font-normal">/ {formatBRL(teto)}</span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[10px] text-ink-dim">{restante > 0 ? "Resta" : "Estourou"}</div>
+                    <div
+                      className={`font-semibold ${
+                        pct > 100 ? "text-negative" : "text-ink"
+                      }`}
+                    >
+                      {formatBRL(pct > 100 ? usado - teto : restante)}
+                    </div>
+                  </div>
+                </div>
+
+                {b.data_inicio && (
+                  <div className="text-[10px] text-ink-dim mt-2 pt-2 border-t border-line/40">
+                    começa em {formatDate(b.data_inicio)} · {pct.toFixed(0)}% do teto
+                  </div>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      )}
     </>
   );
 }

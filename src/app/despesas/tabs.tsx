@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 const TABS = [
   { id: "avulsas", label: "Avulsas" },
   { id: "recorrentes", label: "Recorrentes" },
+  { id: "buckets", label: "Buckets" },
 ];
 
 export function DespesasTabs({ current, mes }: { current: string; mes: string }) {
