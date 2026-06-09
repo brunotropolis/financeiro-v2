@@ -101,9 +101,12 @@ export default async function ReceitasPage({
   const jaCaiuMes = receitas
     .filter((r) => r.status === "recebido" && r.data_recebimento && r.data_recebimento >= inicio && r.data_recebimento <= fim)
     .reduce((s, r) => s + Number(r.valor_liquido), 0);
-  const vaiCairMes = receitas
+  // Greenn (disp + antecipável) entra como "vai entrar em até 24h"
+  const greennAReceberRapido = greenn.disponivel + greenn.antecipavel;
+  const vaiCairMesReceitas = receitas
     .filter((r) => r.status !== "recebido" && r.data_prevista_pagamento && r.data_prevista_pagamento >= inicio && r.data_prevista_pagamento <= fim)
     .reduce((s, r) => s + Number(r.valor_liquido), 0);
+  const vaiCairMes = vaiCairMesReceitas + greennAReceberRapido;
   const totalCaixaMes = jaCaiuMes + vaiCairMes;
   const totalRecebido = jaCaiuMes;
   const totalAReceber = totalFaturamento - totalRecebido;
@@ -183,7 +186,13 @@ export default async function ReceitasPage({
                   {formatBRL(vaiCairMes)}
                 </div>
                 <div className="text-[10px] text-ink-dim mt-0.5">
-                  previstas pra cair
+                  {greennAReceberRapido > 0 ? (
+                    <>
+                      previstas + {formatBRL(greennAReceberRapido)} Greenn (até 24h)
+                    </>
+                  ) : (
+                    "previstas pra cair"
+                  )}
                 </div>
               </Card>
               <Card className="!p-4">

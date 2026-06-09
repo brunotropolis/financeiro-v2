@@ -3,6 +3,7 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import { Card } from "@/components/ui/card";
 import { MesFilter } from "@/components/mes-filter";
+import { getSaldoGreenn } from "@/lib/queries";
 import { getMetaAdsMes } from "@/lib/meta-ads";
 import { CONTAS_ATIVAS_IDS } from "@/lib/constants";
 import { formatBRL, formatBRLCompact } from "@/lib/formatters";
@@ -70,6 +71,10 @@ export default async function DashboardPage({
   const mes = params.m ?? mesAtual;
   const { inicio, fim, label: mesLabel } = rangeFromMonth(mes);
 
+  // 0. Greenn snapshot — disp + antecipável contam como "vai entrar em até 24h"
+  const greenn = await getSaldoGreenn();
+  const greennAReceberRapido = greenn.disponivel + greenn.antecipavel;
+
   // 1. Receitas do mês — Caixa (recebidas + previstas) — lógica = tab Caixa de /receitas
   const orFilter = `and(data_recebimento.gte.${inicio},data_recebimento.lte.${fim}),and(data_prevista_pagamento.gte.${inicio},data_prevista_pagamento.lte.${fim},status.neq.recebido)`;
   const receRes = await supabase
@@ -82,11 +87,13 @@ export default async function DashboardPage({
     data_prevista_pagamento: string | null;
     status: string;
   }>;
-  const entradasMes = receitas.reduce((s, r) => s + Number(r.valor_liquido), 0);
+  const receitasLancadas = receitas.reduce((s, r) => s + Number(r.valor_liquido), 0);
   const jaEntrou = receitas
     .filter((r) => r.status === "recebido")
     .reduce((s, r) => s + Number(r.valor_liquido), 0);
-  const vaiEntrar = entradasMes - jaEntrou;
+  // "Vai entrar" inclui Greenn (disp+antecipável — cai em até 24h se solicitar)
+  const vaiEntrar = (receitasLancadas - jaEntrou) + greennAReceberRapido;
+  const entradasMes = receitasLancadas + greennAReceberRapido;
 
   // 3. Despesas do mês — replicando lógica da tab Geral de /despesas
   // 3a. Avulsas (sem recorrencia_id, não parceladas)
@@ -237,6 +244,11 @@ export default async function DashboardPage({
               <div className="text-[11px] text-ink-dim mt-1">
                 <span className="text-positive">{formatBRLCompact(jaEntrou)}</span> recebido ·{" "}
                 <span className="text-amber-400">{formatBRLCompact(vaiEntrar)}</span> a receber
+                {greennAReceberRapido > 0 && (
+                  <span className="text-ink-dim">
+                    {" "}(inclui {formatBRLCompact(greennAReceberRapido)} Greenn)
+                  </span>
+                )}
               </div>
             </Card>
 
