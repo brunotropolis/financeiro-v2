@@ -31,6 +31,25 @@ export async function getCategorias(tipo?: "despesa" | "receita"): Promise<Categ
   return rows.map((r) => ({ id: r.id, nome: r.nome, tipo: r.tipo, cor: r.cor_hex }));
 }
 
+export type ProjetoItem = {
+  id: string;
+  slug: string;
+  nome: string;
+  cor: string | null;
+};
+
+export async function getProjetos(): Promise<ProjetoItem[]> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("projetos")
+    .select("id, slug, nome, cor_hex")
+    .eq("ativo", true)
+    .order("ordem");
+  return ((data ?? []) as Array<{ id: string; slug: string; nome: string; cor_hex: string | null }>).map(
+    (r) => ({ id: r.id, slug: r.slug, nome: r.nome, cor: r.cor_hex })
+  );
+}
+
 export async function getOrigens(): Promise<OrigemItem[]> {
   const supabase = await createClient();
   const { data } = await supabase

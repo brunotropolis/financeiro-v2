@@ -31,6 +31,14 @@ export type Database = {
         icone: string | null;
         ativo: boolean;
       }>;
+      projetos: Row<{
+        id: string;
+        slug: string;
+        nome: string;
+        cor_hex: string | null;
+        ordem: number;
+        ativo: boolean;
+      }>;
       origens_receita: Row<{
         id: string;
         slug: string;
@@ -53,6 +61,7 @@ export type Database = {
         data_recebimento: string | null;
         status: string;
         notas: string | null;
+        projeto_id: string | null;
       }>;
       greenn_saldos: Row<{
         id: string;
@@ -81,6 +90,7 @@ export type Database = {
         data_fim: string | null;
         notas: string | null;
         ativo: boolean;
+        projeto_id: string | null;
       }>;
       transacoes: Row<{
         id: string;
@@ -105,6 +115,7 @@ export type Database = {
         status: string;
         notas: string | null;
         origem: string | null;
+        projeto_id: string | null;
       }>;
     };
     Views: EmptyObj;

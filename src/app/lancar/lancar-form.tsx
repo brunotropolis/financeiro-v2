@@ -12,7 +12,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { CONTAS_ATIVAS } from "@/lib/constants";
-import type { CategoriaItem, OrigemItem } from "@/lib/catalog";
+import type { CategoriaItem, OrigemItem, ProjetoItem } from "@/lib/catalog";
 import { parseBRLInput, formatBRL } from "@/lib/formatters";
 import { cn } from "@/lib/utils";
 
@@ -71,10 +71,12 @@ export function LancarForm({
   categoriasDespesa,
   categoriasReceita,
   origens,
+  projetos,
 }: {
   categoriasDespesa: CategoriaItem[];
   categoriasReceita: CategoriaItem[];
   origens: OrigemItem[];
+  projetos: ProjetoItem[];
 }) {
   const router = useRouter();
   const [tipo, setTipo] = useState<Tipo>("despesa_avulsa");
@@ -87,6 +89,7 @@ export function LancarForm({
   const [descricao, setDescricao] = useState("");
   const [contaId, setContaId] = useState<string>(CONTAS_ATIVAS[0].id);
   const [categoriaId, setCategoriaId] = useState("");
+  const [projetoId, setProjetoId] = useState<string>(projetos[0]?.id ?? "");
   const [data, setData] = useState(() => new Date().toISOString().slice(0, 10));
   const [status, setStatus] = useState<"prevista" | "paga">("prevista");
 
@@ -129,6 +132,7 @@ export function LancarForm({
         valor: valorNum,
         conta_id: contaId,
         categoria_id: categoriaId || null,
+        projeto_id: projetoId || null,
       };
 
       if (isDespesa) {
@@ -293,6 +297,47 @@ export function LancarForm({
             </Row>
           )}
         </div>
+
+        {/* Projeto (central de custo) */}
+        <Row label="Projeto (central de custo)">
+          <div className="flex flex-wrap gap-2">
+            {projetos.map((p) => {
+              const active = projetoId === p.id;
+              return (
+                <button
+                  type="button"
+                  key={p.id}
+                  onClick={() => setProjetoId(p.id)}
+                  className={cn(
+                    "inline-flex items-center gap-2 text-xs rounded-lg px-3 py-2 border transition-colors",
+                    active
+                      ? "border-lime/60 bg-lime/15 text-ink"
+                      : "border-line bg-bg text-ink-soft hover:bg-elevated"
+                  )}
+                >
+                  <span
+                    className="h-2 w-2 rounded-full"
+                    style={{ background: p.cor ?? "#71717a" }}
+                  />
+                  {p.nome}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => setProjetoId("")}
+              className={cn(
+                "text-[11px] rounded-lg px-2.5 py-2 border transition-colors",
+                projetoId === ""
+                  ? "border-line bg-elevated text-ink"
+                  : "border-line/40 text-ink-dim hover:bg-elevated"
+              )}
+              title="Lançamento sem projeto"
+            >
+              — nenhum —
+            </button>
+          </div>
+        </Row>
 
         {/* Específicos por tipo */}
         {isRecorrente && (

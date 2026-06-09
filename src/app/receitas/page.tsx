@@ -4,6 +4,7 @@ import { Topbar } from "@/components/layout/topbar";
 import { Card } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/server";
 import { getSaldoGreenn } from "@/lib/queries";
+import { getProjetos } from "@/lib/catalog";
 import { formatBRL, formatDate } from "@/lib/formatters";
 import { GreennLine } from "./greenn-line";
 import { Sparkles, PlusCircle } from "lucide-react";
@@ -19,6 +20,7 @@ type Receita = {
   data_prevista_pagamento: string | null;
   data_recebimento: string | null;
   status: string;
+  projeto_id: string | null;
 };
 
 export default async function ReceitasPage() {
@@ -27,13 +29,14 @@ export default async function ReceitasPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const greenn = await getSaldoGreenn();
+  const [greenn, projetos] = await Promise.all([getSaldoGreenn(), getProjetos()]);
+  const projMap = new Map(projetos.map((p) => [p.id, p]));
 
   // Últimas 60 receitas (cobre vários meses)
   const recRes = await supabase
     .from("receitas_brutas")
     .select(
-      "id, produto_nome, origem, valor_liquido, data_venda, data_prevista_pagamento, data_recebimento, status"
+      "id, produto_nome, origem, valor_liquido, data_venda, data_prevista_pagamento, data_recebimento, status, projeto_id"
     )
     .order("data_venda", { ascending: false })
     .limit(60);
@@ -112,7 +115,9 @@ export default async function ReceitasPage() {
                 Nenhuma receita lançada ainda.
               </div>
             ) : (
-              receitas.map((r) => (
+              receitas.map((r) => {
+                const proj = r.projeto_id ? projMap.get(r.projeto_id) : null;
+                return (
                 <div
                   key={r.id}
                   className="border-b border-line/40 last:border-0 px-4 py-3 grid grid-cols-12 gap-2 text-sm hover:bg-elevated/30"
@@ -121,8 +126,17 @@ export default async function ReceitasPage() {
                     <div className="font-medium truncate">
                       {r.produto_nome ?? "(sem descrição)"}
                     </div>
-                    <div className="text-[10px] text-ink-dim mt-0.5 uppercase">
-                      {r.origem ?? "—"}
+                    <div className="text-[10px] text-ink-dim mt-0.5 uppercase flex items-center gap-2">
+                      <span>{r.origem ?? "—"}</span>
+                      {proj && (
+                        <span className="inline-flex items-center gap-1 normal-case text-ink-soft">
+                          <span
+                            className="h-1.5 w-1.5 rounded-full"
+                            style={{ background: proj.cor ?? "#71717a" }}
+                          />
+                          {proj.nome}
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div className="col-span-2 text-ink-soft text-xs">
@@ -157,7 +171,8 @@ export default async function ReceitasPage() {
                     )}
                   </div>
                 </div>
-              ))
+                );
+              })
             )}
           </Card>
 

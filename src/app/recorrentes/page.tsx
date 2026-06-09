@@ -3,6 +3,7 @@ import { Topbar } from "@/components/layout/topbar";
 import { Card } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/server";
 import { CONTAS_ATIVAS, CONTAS_ATIVAS_IDS } from "@/lib/constants";
+import { getProjetos } from "@/lib/catalog";
 import { formatBRL } from "@/lib/formatters";
 import { Repeat, Layers, Power } from "lucide-react";
 import { RecorrenteToggle } from "./recorrente-toggle";
@@ -19,6 +20,7 @@ type RecorrenciaRow = {
   categoria_id: string | null;
   tipo_valor: string | null;
   ativo: boolean;
+  projeto_id: string | null;
 };
 
 type ParceladaGroup = {
@@ -44,11 +46,13 @@ export default async function RecorrentesPage() {
   // 1. Recorrências ativas das 3 contas
   const recRes = await supabase
     .from("recorrencias")
-    .select("id, nome, valor_padrao, frequencia, dia_vencimento, conta_id, categoria_id, tipo_valor, ativo")
+    .select("id, nome, valor_padrao, frequencia, dia_vencimento, conta_id, categoria_id, tipo_valor, ativo, projeto_id")
     .in("conta_id", [...CONTAS_ATIVAS_IDS])
     .eq("tipo", "despesa")
     .order("nome");
   const recorrencias = ((recRes.data ?? []) as RecorrenciaRow[]).filter((r) => r.ativo);
+  const projetos = await getProjetos();
+  const projMap = new Map(projetos.map((p) => [p.id, p]));
 
   // 2. Parceladas em aberto (status=prevista) das 3 contas
   const hoje = new Date().toISOString().slice(0, 10);
@@ -125,6 +129,7 @@ export default async function RecorrentesPage() {
                     <tr className="border-b border-line/60 text-[11px] text-ink-dim uppercase tracking-wider">
                       <th className="text-left px-4 py-2.5 font-medium">Nome</th>
                       <th className="text-left px-4 py-2.5 font-medium">Conta</th>
+                      <th className="text-left px-4 py-2.5 font-medium">Projeto</th>
                       <th className="text-left px-4 py-2.5 font-medium">Freq.</th>
                       <th className="text-right px-4 py-2.5 font-medium">Valor</th>
                       <th className="text-right px-4 py-2.5 font-medium">Ações</th>
@@ -133,6 +138,7 @@ export default async function RecorrentesPage() {
                   <tbody>
                     {recorrencias.map((r) => {
                       const conta = CONTAS_ATIVAS.find((c) => c.id === r.conta_id);
+                      const proj = r.projeto_id ? projMap.get(r.projeto_id) : null;
                       const freq =
                         r.frequencia === "mensal"
                           ? `dia ${r.dia_vencimento ?? "?"}`
@@ -155,6 +161,19 @@ export default async function RecorrentesPage() {
                               />
                               {conta?.nome ?? "—"}
                             </span>
+                          </td>
+                          <td className="px-4 py-3 text-ink-soft text-xs">
+                            {proj ? (
+                              <span className="inline-flex items-center gap-1.5">
+                                <span
+                                  className="h-1.5 w-1.5 rounded-full"
+                                  style={{ background: proj.cor ?? "#71717a" }}
+                                />
+                                {proj.nome}
+                              </span>
+                            ) : (
+                              <span className="text-ink-dim">—</span>
+                            )}
                           </td>
                           <td className="px-4 py-3 text-ink-soft">{freq}</td>
                           <td className="px-4 py-3 text-right font-medium">

@@ -4,7 +4,7 @@ import { Card } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/server";
 import { CONTAS_ATIVAS, CONTAS_ATIVAS_IDS } from "@/lib/constants";
 import { formatBRL, formatDate } from "@/lib/formatters";
-import { getCategorias } from "@/lib/catalog";
+import { getCategorias, getProjetos } from "@/lib/catalog";
 import { LancamentosFiltros } from "./filtros";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +22,7 @@ type Tx = {
   parcelado: boolean | null;
   parcela_atual: number | null;
   parcela_total: number | null;
+  projeto_id: string | null;
 };
 
 function rangeFrom(periodo: string): { inicio: string; fim: string; label: string } {
@@ -81,7 +82,7 @@ export default async function LancamentosPage({
   let q = supabase
     .from("transacoes")
     .select(
-      "id, descricao, valor, tipo, data_competencia, data_pagamento, status, conta_id, categoria_id, parcelado, parcela_atual, parcela_total"
+      "id, descricao, valor, tipo, data_competencia, data_pagamento, status, conta_id, categoria_id, parcelado, parcela_atual, parcela_total, projeto_id"
     )
     .in("conta_id", contasFiltradas)
     .gte("data_competencia", inicio)
@@ -93,8 +94,9 @@ export default async function LancamentosPage({
   const txRes = await q;
   const transacoes = (txRes.data ?? []) as Tx[];
 
-  const categorias = await getCategorias();
+  const [categorias, projetos] = await Promise.all([getCategorias(), getProjetos()]);
   const catMap = new Map(categorias.map((c) => [c.id, c]));
+  const projMap = new Map(projetos.map((p) => [p.id, p]));
 
   const totalDespesas = transacoes
     .filter((t) => t.tipo === "despesa")
@@ -161,6 +163,7 @@ export default async function LancamentosPage({
                       <th className="text-left px-4 py-2.5 font-medium">Descrição</th>
                       <th className="text-left px-4 py-2.5 font-medium">Conta</th>
                       <th className="text-left px-4 py-2.5 font-medium">Categoria</th>
+                      <th className="text-left px-4 py-2.5 font-medium">Projeto</th>
                       <th className="text-left px-4 py-2.5 font-medium">Status</th>
                       <th className="text-right px-4 py-2.5 font-medium">Valor</th>
                     </tr>
@@ -169,6 +172,7 @@ export default async function LancamentosPage({
                     {transacoes.map((t) => {
                       const conta = CONTAS_ATIVAS.find((c) => c.id === t.conta_id);
                       const cat = t.categoria_id ? catMap.get(t.categoria_id) : null;
+                      const proj = t.projeto_id ? projMap.get(t.projeto_id) : null;
                       const isDespesa = t.tipo === "despesa";
                       return (
                         <tr key={t.id} className="border-b border-line/40 last:border-0 hover:bg-elevated/30">
@@ -196,6 +200,19 @@ export default async function LancamentosPage({
                           </td>
                           <td className="px-4 py-3 text-ink-soft text-xs">
                             {cat?.nome ?? "—"}
+                          </td>
+                          <td className="px-4 py-3 text-xs">
+                            {proj ? (
+                              <span className="inline-flex items-center gap-1.5">
+                                <span
+                                  className="h-1.5 w-1.5 rounded-full"
+                                  style={{ background: proj.cor ?? "#71717a" }}
+                                />
+                                <span className="text-ink-soft">{proj.nome}</span>
+                              </span>
+                            ) : (
+                              <span className="text-ink-dim">—</span>
+                            )}
                           </td>
                           <td className="px-4 py-3">
                             <span

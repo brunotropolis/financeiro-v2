@@ -13,6 +13,7 @@ type Payload = {
   descricao?: string;
   conta_id: string;
   categoria_id?: string | null;
+  projeto_id?: string | null;
   data_competencia?: string;
   status?: string;
   frequencia?: string;
@@ -83,6 +84,7 @@ export async function POST(request: NextRequest) {
           entidade_id,
           categoria_id: body.categoria_id ?? null,
           conta_id,
+          projeto_id: body.projeto_id ?? null,
           parcelado: false,
           status: body.status ?? "prevista",
           origem: "manual",
@@ -105,6 +107,7 @@ export async function POST(request: NextRequest) {
           entidade_id,
           categoria_id: body.categoria_id ?? null,
           conta_id,
+          projeto_id: body.projeto_id ?? null,
           data_inicio: body.data_competencia ?? new Date().toISOString().slice(0, 10),
           ativo: true,
           ...audit,
@@ -131,6 +134,7 @@ export async function POST(request: NextRequest) {
           entidade_id,
           categoria_id: body.categoria_id ?? null,
           conta_id,
+          projeto_id: body.projeto_id ?? null,
           parcelado: true,
           parcela_atual: i + 1,
           parcela_total: n,
@@ -153,6 +157,7 @@ export async function POST(request: NextRequest) {
           origem: tipo === "receita_greenn" ? "greenn" : "manual",
           origem_id: body.origem_id ?? null,
           entidade_id,
+          projeto_id: body.projeto_id ?? null,
           produto_nome: body.produto_nome ?? null,
           valor_bruto: valor,
           taxas: 0,
