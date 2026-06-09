@@ -13,22 +13,19 @@ type DbHelper = {
 };
 
 const ALLOWED_FIELDS = new Set([
-  "nome",
-  "valor_padrao",
-  "ativo",
-  "dia_vencimento",
-  "frequencia",
-  "tipo_valor",
+  "descricao",
+  "valor",
+  "data_competencia",
+  "data_pagamento",
   "categoria_id",
   "projeto_id",
   "conta_id",
-  "data_inicio",
-  "data_fim",
+  "status",
   "notas",
 ]);
 
 export async function PATCH(
-  request: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const supabase = await createClient();
@@ -38,7 +35,7 @@ export async function PATCH(
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
 
   const { id } = await params;
-  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
 
   const updates: Record<string, unknown> = { updated_by: user.id };
   for (const [k, v] of Object.entries(body)) {
@@ -52,8 +49,17 @@ export async function PATCH(
     );
   }
 
+  // Coerência: se status=paga e não tem data_pagamento, seta como data_competencia
+  if (
+    updates.status === "paga" &&
+    !updates.data_pagamento &&
+    updates.data_competencia
+  ) {
+    updates.data_pagamento = updates.data_competencia;
+  }
+
   const db = supabase as unknown as DbHelper;
-  const { error } = await db.from("recorrencias").update(updates).eq("id", id);
+  const { error } = await db.from("transacoes").update(updates).eq("id", id);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
@@ -71,7 +77,7 @@ export async function DELETE(
 
   const { id } = await params;
   const db = supabase as unknown as DbHelper;
-  const { error } = await db.from("recorrencias").delete().eq("id", id);
+  const { error } = await db.from("transacoes").delete().eq("id", id);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });

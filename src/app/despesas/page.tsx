@@ -7,6 +7,7 @@ import { getProjetos } from "@/lib/catalog";
 import { formatBRL, formatDate } from "@/lib/formatters";
 import { Repeat, Layers, PiggyBank, Power, ArrowDownToLine } from "lucide-react";
 import { RecorrenteToggle } from "@/app/recorrentes/recorrente-toggle";
+import { EditButton } from "@/components/edit-button";
 import { DespesasTabs } from "./tabs";
 import { MesFilter } from "./mes-filter";
 
@@ -127,6 +128,8 @@ export default async function DespesasPage({
                 fim={fim}
                 catMap={catMap}
                 projMap={projMap}
+                catList={catList}
+                projetos={projetos}
               />
             ) : (
               <RecorrentesTab
@@ -135,6 +138,8 @@ export default async function DespesasPage({
                 fim={fim}
                 catMap={catMap}
                 projMap={projMap}
+                catList={catList}
+                projetos={projetos}
               />
             )}
           </div>
@@ -150,12 +155,16 @@ async function AvulsasTab({
   fim,
   catMap,
   projMap,
+  catList,
+  projetos,
 }: {
   supabase: Awaited<ReturnType<typeof createClient>>;
   inicio: string;
   fim: string;
   catMap: Map<string, { id: string; nome: string; cor_hex: string | null }>;
   projMap: Map<string, { id: string; nome: string; cor: string | null }>;
+  catList: Array<{ id: string; nome: string }>;
+  projetos: Array<{ id: string; nome: string; cor: string | null }>;
 }) {
   const res = await supabase
     .from("transacoes")
@@ -220,6 +229,7 @@ async function AvulsasTab({
                   <th className="text-left px-4 py-2.5 font-medium">Projeto</th>
                   <th className="text-left px-4 py-2.5 font-medium">Status</th>
                   <th className="text-right px-4 py-2.5 font-medium">Valor</th>
+                  <th className="text-right px-4 py-2.5 font-medium">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -279,6 +289,24 @@ async function AvulsasTab({
                       <td className="px-4 py-3 text-right font-semibold text-negative whitespace-nowrap">
                         −{formatBRL(Number(t.valor))}
                       </td>
+                      <td className="px-4 py-3 text-right">
+                        <EditButton
+                          compact
+                          entry={{
+                            kind: "transacao",
+                            id: t.id,
+                            descricao: t.descricao,
+                            valor: Number(t.valor),
+                            conta_id: t.conta_id,
+                            categoria_id: t.categoria_id,
+                            projeto_id: t.projeto_id,
+                            data_competencia: t.data_competencia,
+                            status: t.status,
+                          }}
+                          categorias={catList}
+                          projetos={projetos}
+                        />
+                      </td>
                     </tr>
                   );
                 })}
@@ -297,12 +325,16 @@ async function RecorrentesTab({
   fim,
   catMap,
   projMap,
+  catList,
+  projetos,
 }: {
   supabase: Awaited<ReturnType<typeof createClient>>;
   inicio: string;
   fim: string;
   catMap: Map<string, { id: string; nome: string; cor_hex: string | null }>;
   projMap: Map<string, { id: string; nome: string; cor: string | null }>;
+  catList: Array<{ id: string; nome: string }>;
+  projetos: Array<{ id: string; nome: string; cor: string | null }>;
 }) {
   const recRes = await supabase
     .from("recorrencias")
@@ -426,7 +458,26 @@ async function RecorrentesTab({
                         {formatBRL(Number(r.valor_padrao))}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <RecorrenteToggle id={r.id} ativo={r.ativo} />
+                        <div className="inline-flex items-center gap-1">
+                          <EditButton
+                            compact
+                            entry={{
+                              kind: "recorrencia",
+                              id: r.id,
+                              descricao: r.nome,
+                              valor: Number(r.valor_padrao),
+                              conta_id: r.conta_id,
+                              categoria_id: r.categoria_id,
+                              projeto_id: r.projeto_id,
+                              dia_vencimento: r.dia_vencimento,
+                              frequencia: r.frequencia,
+                              data_inicio: r.data_inicio ?? undefined,
+                            }}
+                            categorias={catList}
+                            projetos={projetos}
+                          />
+                          <RecorrenteToggle id={r.id} ativo={r.ativo} />
+                        </div>
                       </td>
                     </tr>
                   );
@@ -465,9 +516,27 @@ async function RecorrentesTab({
                         </div>
                       )}
                     </div>
-                    <span className="text-[10px] uppercase tracking-wider bg-lime/15 text-lime border border-lime/30 rounded px-1.5 py-0.5">
-                      bucket
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] uppercase tracking-wider bg-lime/15 text-lime border border-lime/30 rounded px-1.5 py-0.5">
+                        bucket
+                      </span>
+                      <EditButton
+                        compact
+                        entry={{
+                          kind: "bucket",
+                          id: b.id,
+                          descricao: b.nome,
+                          valor: Number(b.valor_padrao),
+                          conta_id: b.conta_id,
+                          categoria_id: b.categoria_id,
+                          projeto_id: b.projeto_id,
+                          frequencia: b.frequencia,
+                          data_inicio: b.data_inicio ?? undefined,
+                        }}
+                        categorias={catList}
+                        projetos={projetos}
+                      />
+                    </div>
                   </div>
                   <div className="flex items-end justify-between mt-3">
                     <div>
