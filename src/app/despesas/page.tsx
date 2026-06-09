@@ -8,6 +8,7 @@ import { formatBRL, formatDate } from "@/lib/formatters";
 import { Repeat, Layers, PiggyBank, Power, ArrowDownToLine } from "lucide-react";
 import { RecorrenteToggle } from "@/app/recorrentes/recorrente-toggle";
 import { EditButton } from "@/components/edit-button";
+import { BucketTransacoesButton } from "@/components/bucket-transacoes-button";
 import { DespesasTabs } from "./tabs";
 import { MesFilter } from "@/components/mes-filter";
 
@@ -701,24 +702,56 @@ async function BucketsTab({
   // Transações vinculadas explicitamente a buckets (recorrencia_id = bucket.id)
   const txRes = await supabase
     .from("transacoes")
-    .select("recorrencia_id, valor")
+    .select(
+      "id, recorrencia_id, valor, descricao, data_competencia, status, conta_id, categoria_id, projeto_id"
+    )
     .in("conta_id", [...CONTAS_ATIVAS_IDS])
     .eq("tipo", "despesa")
     .not("recorrencia_id", "is", null)
     .gte("data_competencia", inicio)
-    .lte("data_competencia", fim);
+    .lte("data_competencia", fim)
+    .order("data_competencia", { ascending: false });
   const txs = (txRes.data ?? []) as Array<{
+    id: string;
     recorrencia_id: string;
     valor: number | string;
+    descricao: string;
+    data_competencia: string;
+    status: string;
+    conta_id: string | null;
+    categoria_id: string | null;
+    projeto_id: string | null;
   }>;
 
-  // Map bucket_id → total gasto
+  // Map bucket_id → { total, lista }
   const usoPorBucket = new Map<string, number>();
+  const txsPorBucket = new Map<
+    string,
+    Array<{
+      id: string;
+      descricao: string;
+      valor: number;
+      data_competencia: string;
+      status: string;
+      conta_id: string | null;
+      categoria_id: string | null;
+      projeto_id: string | null;
+    }>
+  >();
   for (const t of txs) {
-    usoPorBucket.set(
-      t.recorrencia_id,
-      (usoPorBucket.get(t.recorrencia_id) ?? 0) + Number(t.valor)
-    );
+    const v = Number(t.valor);
+    usoPorBucket.set(t.recorrencia_id, (usoPorBucket.get(t.recorrencia_id) ?? 0) + v);
+    if (!txsPorBucket.has(t.recorrencia_id)) txsPorBucket.set(t.recorrencia_id, []);
+    txsPorBucket.get(t.recorrencia_id)!.push({
+      id: t.id,
+      descricao: t.descricao,
+      valor: v,
+      data_competencia: t.data_competencia,
+      status: t.status,
+      conta_id: t.conta_id,
+      categoria_id: t.categoria_id,
+      projeto_id: t.projeto_id,
+    });
   }
 
   // Stats agregados
@@ -855,11 +888,19 @@ async function BucketsTab({
                   </div>
                 </div>
 
-                {b.data_inicio && (
-                  <div className="text-[10px] text-ink-dim mt-2 pt-2 border-t border-line/40">
-                    começa em {formatDate(b.data_inicio)} · {pct.toFixed(0)}% do teto
-                  </div>
-                )}
+                <div className="mt-3 pt-3 border-t border-line/40 flex items-center justify-between gap-2">
+                  <BucketTransacoesButton
+                    bucketNome={b.nome}
+                    transacoes={txsPorBucket.get(b.id) ?? []}
+                    categorias={catList}
+                    projetos={projetos}
+                  />
+                  {b.data_inicio && (
+                    <div className="text-[10px] text-ink-dim text-right">
+                      começa em {formatDate(b.data_inicio)} · {pct.toFixed(0)}% do teto
+                    </div>
+                  )}
+                </div>
               </Card>
             );
           })}
