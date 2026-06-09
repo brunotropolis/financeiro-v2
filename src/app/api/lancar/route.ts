@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
           projeto_id: body.projeto_id ?? null,
           parcelado: false,
           status: body.status ?? "prevista",
-          origem: "manual",
+          origem: "painel",
           ...audit,
         },
       ]);
@@ -184,7 +184,7 @@ export async function POST(request: NextRequest) {
           parcela_atual: i + 1,
           parcela_total: n,
           status: "prevista",
-          origem: "parcela",
+          origem: "painel",
           ...audit,
         });
       }
