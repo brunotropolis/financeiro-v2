@@ -103,12 +103,19 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+      const freqBucket = body.frequencia ?? "mensal";
+      if (!["semanal", "mensal", "bimestral"].includes(freqBucket)) {
+        return NextResponse.json(
+          { error: "Frequência inválida pro bucket" },
+          { status: 400 }
+        );
+      }
       const { error } = await db.from("recorrencias").insert([
         {
           nome: body.descricao ?? "(bucket sem nome)",
           tipo: "despesa",
           valor_padrao: valor,
-          frequencia: "mensal",
+          frequencia: freqBucket,
           tipo_valor: "bucket",
           entidade_id,
           categoria_id: body.categoria_id,

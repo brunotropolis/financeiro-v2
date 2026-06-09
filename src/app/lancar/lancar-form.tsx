@@ -53,8 +53,8 @@ const TIPOS: Array<{
   },
   {
     id: "despesa_bucket",
-    label: "Bucket (teto mensal)",
-    desc: "Ex: Alimentação R$ 5k/mês",
+    label: "Bucket",
+    desc: "Teto por período",
     icon: PiggyBank,
     side: "despesa",
   },
@@ -94,11 +94,16 @@ export function LancarForm({
   const [status, setStatus] = useState<"prevista" | "paga">("prevista");
 
   // específicos recorrente
-  const [frequencia, setFrequencia] = useState<"mensal" | "semanal" | "quinzenal">("mensal");
+  const [frequencia, setFrequencia] = useState<
+    "mensal" | "semanal" | "quinzenal" | "bimestral"
+  >("mensal");
   const [diaVencimento, setDiaVencimento] = useState<number>(10);
 
   // específicos parcelada
   const [parcelas, setParcelas] = useState<number>(2);
+
+  // específicos bucket
+  const [freqBucket, setFreqBucket] = useState<"semanal" | "mensal" | "bimestral">("mensal");
 
   // específicos receita
   const [origemId, setOrigemId] = useState("");
@@ -143,6 +148,7 @@ export function LancarForm({
         }
         payload.descricao = descricao || "(bucket sem nome)";
         payload.data_competencia = data;
+        payload.frequencia = freqBucket;
       } else if (isDespesa) {
         payload.descricao = descricao || "(sem descrição)";
         payload.data_competencia = data;
@@ -289,18 +295,16 @@ export function LancarForm({
             <Row
               label={
                 isBucket
-                  ? "Mês do teto"
+                  ? "Começa em"
                   : isRecorrente
                     ? "Início"
                     : "Data"
               }
             >
               <input
-                type={isBucket ? "month" : "date"}
-                value={isBucket ? data.slice(0, 7) : data}
-                onChange={(e) =>
-                  setData(isBucket ? `${e.target.value}-01` : e.target.value)
-                }
+                type="date"
+                value={data}
+                onChange={(e) => setData(e.target.value)}
                 className="w-full bg-bg border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-lime"
               />
             </Row>
@@ -460,11 +464,27 @@ export function LancarForm({
         )}
 
         {isBucket && (
-          <div className="text-[11px] text-ink-dim leading-relaxed border border-line/40 rounded-lg p-3 bg-bg/40">
-            <strong className="text-lime">Bucket</strong> = teto mensal de gasto por
-            categoria. Não materializa transação — só serve de referência. Cada despesa
-            avulsa que você lançar nessa mesma categoria conta contra o teto.
-          </div>
+          <>
+            <Row label="Frequência do teto">
+              <div className="flex gap-2">
+                {(["semanal", "mensal", "bimestral"] as const).map((f) => (
+                  <Toggle
+                    key={f}
+                    active={freqBucket === f}
+                    label={f[0].toUpperCase() + f.slice(1)}
+                    onClick={() => setFreqBucket(f)}
+                  />
+                ))}
+              </div>
+            </Row>
+
+            <div className="text-[11px] text-ink-dim leading-relaxed border border-line/40 rounded-lg p-3 bg-bg/40">
+              <strong className="text-lime">Bucket</strong> = teto de gasto por categoria
+              num período (semanal, mensal ou bimestral). Não materializa transação — só
+              serve de referência. Cada despesa avulsa que você lançar nessa categoria
+              conta contra o teto.
+            </div>
+          </>
         )}
       </div>
 

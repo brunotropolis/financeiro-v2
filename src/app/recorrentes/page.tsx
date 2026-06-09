@@ -4,7 +4,7 @@ import { Card } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/server";
 import { CONTAS_ATIVAS, CONTAS_ATIVAS_IDS } from "@/lib/constants";
 import { getProjetos } from "@/lib/catalog";
-import { formatBRL } from "@/lib/formatters";
+import { formatBRL, formatDate } from "@/lib/formatters";
 import { Repeat, Layers, Power, PiggyBank } from "lucide-react";
 import { RecorrenteToggle } from "./recorrente-toggle";
 
@@ -21,6 +21,7 @@ type RecorrenciaRow = {
   tipo_valor: string | null;
   ativo: boolean;
   projeto_id: string | null;
+  data_inicio: string | null;
 };
 
 type ParceladaGroup = {
@@ -46,7 +47,7 @@ export default async function RecorrentesPage() {
   // 1. Recorrências ativas das 3 contas
   const recRes = await supabase
     .from("recorrencias")
-    .select("id, nome, valor_padrao, frequencia, dia_vencimento, conta_id, categoria_id, tipo_valor, ativo, projeto_id")
+    .select("id, nome, valor_padrao, frequencia, dia_vencimento, conta_id, categoria_id, tipo_valor, ativo, projeto_id, data_inicio")
     .in("conta_id", [...CONTAS_ATIVAS_IDS])
     .eq("tipo", "despesa")
     .order("nome");
@@ -240,7 +241,9 @@ export default async function RecorrentesPage() {
                       </div>
                       <div className="flex items-end justify-between mt-3">
                         <div>
-                          <div className="text-[10px] text-ink-dim">Teto mensal</div>
+                          <div className="text-[10px] text-ink-dim">
+                            Teto {b.frequencia ?? "mensal"}
+                          </div>
                           <div className="text-lg font-bold">
                             {formatBRL(Number(b.valor_padrao))}
                           </div>
@@ -255,6 +258,11 @@ export default async function RecorrentesPage() {
                           </span>
                         )}
                       </div>
+                      {b.data_inicio && (
+                        <div className="text-[10px] text-ink-dim mt-2 pt-2 border-t border-line/40">
+                          começa em {formatDate(b.data_inicio)}
+                        </div>
+                      )}
                     </Card>
                   );
                 })}
