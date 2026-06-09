@@ -4,6 +4,7 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 
 const TABS = [
+  { id: "geral", label: "Geral" },
   { id: "avulsas", label: "Avulsas" },
   { id: "recorrentes", label: "Recorrentes" },
   { id: "buckets", label: "Buckets" },

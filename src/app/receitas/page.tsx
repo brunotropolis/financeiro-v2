@@ -52,7 +52,7 @@ export default async function ReceitasPage({
   } = await supabase.auth.getUser();
 
   const params = await searchParams;
-  const tab = params.tab === "caixa" ? "caixa" : "faturamento";
+  const tab = params.tab === "faturamento" ? "faturamento" : "caixa";
   const hoje = new Date();
   const mesAtual = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}`;
   const mes = params.m ?? mesAtual;
@@ -66,27 +66,46 @@ export default async function ReceitasPage({
   const projMap = new Map(projetos.map((p) => [p.id, p]));
   const origensList = origens.map((o) => ({ id: o.id, nome: o.nome }));
 
-  // Receitas: Faturamento = data_venda no mês; Caixa = data_recebimento no mês
-  const dataField = tab === "caixa" ? "data_recebimento" : "data_venda";
-  let q = supabase
-    .from("receitas_brutas")
-    .select(
-      "id, produto_nome, origem, origem_id, valor_liquido, data_venda, data_prevista_pagamento, data_recebimento, status, projeto_id"
-    )
-    .gte(dataField, inicio)
-    .lte(dataField, fim)
-    .order(dataField, { ascending: false });
+  // Receitas:
+  // - Faturamento = data_venda no mês (visão por competência)
+  // - Caixa = data_recebimento OR data_prevista_pagamento no mês (fluxo do mês)
+  let receitas: Receita[] = [];
 
-  if (tab === "caixa") {
-    q = q.eq("status", "recebido");
+  if (tab === "faturamento") {
+    const recRes = await supabase
+      .from("receitas_brutas")
+      .select(
+        "id, produto_nome, origem, origem_id, valor_liquido, data_venda, data_prevista_pagamento, data_recebimento, status, projeto_id"
+      )
+      .gte("data_venda", inicio)
+      .lte("data_venda", fim)
+      .order("data_venda", { ascending: false });
+    receitas = (recRes.data ?? []) as Receita[];
+  } else {
+    // Caixa: OR de recebidas (data_recebimento) + previstas (data_prevista_pagamento)
+    const orFilter = `and(data_recebimento.gte.${inicio},data_recebimento.lte.${fim}),and(data_prevista_pagamento.gte.${inicio},data_prevista_pagamento.lte.${fim},status.neq.recebido)`;
+    const recRes = await supabase
+      .from("receitas_brutas")
+      .select(
+        "id, produto_nome, origem, origem_id, valor_liquido, data_venda, data_prevista_pagamento, data_recebimento, status, projeto_id"
+      )
+      .or(orFilter);
+    receitas = ((recRes.data ?? []) as Receita[]).sort((a, b) => {
+      const da = a.status === "recebido" ? a.data_recebimento : a.data_prevista_pagamento;
+      const db = b.status === "recebido" ? b.data_recebimento : b.data_prevista_pagamento;
+      return (db ?? "").localeCompare(da ?? "");
+    });
   }
-  const recRes = await q;
-  const receitas = (recRes.data ?? []) as Receita[];
 
   const totalFaturamento = receitas.reduce((s, r) => s + Number(r.valor_liquido), 0);
-  const totalRecebido = receitas
-    .filter((r) => r.status === "recebido")
+  const jaCaiuMes = receitas
+    .filter((r) => r.status === "recebido" && r.data_recebimento && r.data_recebimento >= inicio && r.data_recebimento <= fim)
     .reduce((s, r) => s + Number(r.valor_liquido), 0);
+  const vaiCairMes = receitas
+    .filter((r) => r.status !== "recebido" && r.data_prevista_pagamento && r.data_prevista_pagamento >= inicio && r.data_prevista_pagamento <= fim)
+    .reduce((s, r) => s + Number(r.valor_liquido), 0);
+  const totalCaixaMes = jaCaiuMes + vaiCairMes;
+  const totalRecebido = jaCaiuMes;
   const totalAReceber = totalFaturamento - totalRecebido;
 
   return (
@@ -103,7 +122,7 @@ export default async function ReceitasPage({
               <h1 className="text-2xl font-semibold tracking-tight">Receitas</h1>
               <p className="text-xs text-ink-dim mt-1">
                 {tab === "caixa"
-                  ? "Dinheiro que entrou em caixa — referência:"
+                  ? "Fluxo de caixa do mês (já entrou + vai entrar) — referência:"
                   : "Total faturado por competência — referência:"}{" "}
                 <strong>{mesLabel}</strong>
               </p>
@@ -146,31 +165,45 @@ export default async function ReceitasPage({
               </Card>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-5 mb-5">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mt-5 mb-5">
               <Card className="!p-4">
                 <div className="text-xs text-ink-soft flex items-center gap-1.5">
-                  <Wallet className="h-3 w-3" /> Caixa do mês
+                  <Wallet className="h-3 w-3" /> Já entrou no mês
                 </div>
                 <div className="text-xl font-bold text-positive mt-0.5">
-                  {formatBRL(totalRecebido)}
+                  {formatBRL(jaCaiuMes)}
                 </div>
-                <div className="text-[10px] text-ink-dim mt-0.5">{receitas.length} entradas</div>
+                <div className="text-[10px] text-ink-dim mt-0.5">
+                  recebidas nesse mês
+                </div>
               </Card>
               <Card className="!p-4">
-                <div className="text-xs text-ink-soft">Greenn em caixa</div>
+                <div className="text-xs text-ink-soft">Vai entrar no mês</div>
+                <div className="text-xl font-bold text-amber-400 mt-0.5">
+                  {formatBRL(vaiCairMes)}
+                </div>
+                <div className="text-[10px] text-ink-dim mt-0.5">
+                  previstas pra cair
+                </div>
+              </Card>
+              <Card className="!p-4">
+                <div className="text-xs text-ink-soft">Total do mês</div>
                 <div className="text-xl font-bold text-lime mt-0.5">
-                  {formatBRL(greenn.disponivel)}
+                  {formatBRL(totalCaixaMes)}
+                </div>
+                <div className="text-[10px] text-ink-dim mt-0.5">
+                  já + previsto
+                </div>
+              </Card>
+              <Card className="!p-4">
+                <div className="text-xs text-ink-soft">Greenn na plataforma</div>
+                <div className="text-xl font-bold text-lime mt-0.5">
+                  {formatBRL(greenn.disponivel + greenn.pendente)}
                 </div>
                 <div className="text-[10px] text-ink-dim mt-0.5">
                   {greenn.capturado_em
                     ? `snap ${formatDate(greenn.capturado_em)}`
                     : "sem snapshot"}
-                </div>
-              </Card>
-              <Card className="!p-4">
-                <div className="text-xs text-ink-soft">Greenn a receber</div>
-                <div className="text-xl font-bold text-amber-400 mt-0.5">
-                  {formatBRL(greenn.disponivel + greenn.pendente)}
                 </div>
               </Card>
             </div>
@@ -181,11 +214,11 @@ export default async function ReceitasPage({
             <div className="border-b border-line/60 px-4 py-2.5 grid grid-cols-12 gap-2 text-[11px] text-ink-dim uppercase tracking-wider bg-surface/50">
               <div className="col-span-3">Origem / Produto</div>
               <div className="col-span-2">
-                {tab === "caixa" ? "Recebido em" : "Data venda"}
+                {tab === "caixa" ? "Cai em" : "Data venda"}
               </div>
               <div className="col-span-2 text-right">Valor</div>
               <div className="col-span-2 text-right">
-                {tab === "caixa" ? "Greenn" : "Recebido"}
+                {tab === "caixa" ? "Situação" : "Recebido"}
               </div>
               <div className="col-span-2">Status</div>
               <div className="col-span-1 text-right">Ações</div>
@@ -209,7 +242,13 @@ export default async function ReceitasPage({
             ) : (
               receitas.map((r) => {
                 const proj = r.projeto_id ? projMap.get(r.projeto_id) : null;
-                const dataExibir = tab === "caixa" ? r.data_recebimento : r.data_venda;
+                const dataExibir =
+                  tab === "caixa"
+                    ? r.status === "recebido"
+                      ? r.data_recebimento
+                      : r.data_prevista_pagamento
+                    : r.data_venda;
+                const previsto = tab === "caixa" && r.status !== "recebido";
                 return (
                   <div
                     key={r.id}
@@ -232,14 +271,22 @@ export default async function ReceitasPage({
                         )}
                       </div>
                     </div>
-                    <div className="col-span-2 text-ink-soft text-xs">
+                    <div className={`col-span-2 text-xs ${previsto ? "text-amber-400" : "text-ink-soft"}`}>
                       {dataExibir ? formatDate(dataExibir) : "—"}
                     </div>
                     <div className="col-span-2 text-right font-medium">
                       {formatBRL(Number(r.valor_liquido))}
                     </div>
                     <div className="col-span-2 text-right">
-                      {r.status === "recebido" ? (
+                      {tab === "caixa" ? (
+                        previsto ? (
+                          <span className="text-amber-400 text-xs">vai entrar</span>
+                        ) : (
+                          <span className="text-positive font-medium">
+                            {formatBRL(Number(r.valor_liquido))}
+                          </span>
+                        )
+                      ) : r.status === "recebido" ? (
                         <span className="text-positive font-medium">
                           {formatBRL(Number(r.valor_liquido))}
                         </span>
@@ -294,8 +341,8 @@ export default async function ReceitasPage({
           <div className="mt-4 flex items-center gap-2 text-[11px] text-ink-dim">
             <Sparkles className="h-3 w-3" />
             {tab === "caixa"
-              ? "Caixa mostra só receitas com status 'recebido' (data_recebimento no mês)."
-              : "Faturamento mostra receitas por competência (data da venda)."}
+              ? "Caixa = o que cai/caiu no mês. Já recebidas (data_recebimento) + previstas (data_prevista_pagamento)."
+              : "Faturamento = receitas por competência (data da venda), independente de quando cai."}
           </div>
         </div>
       </main>

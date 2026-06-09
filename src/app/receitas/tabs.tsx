@@ -4,8 +4,8 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 
 const TABS = [
-  { id: "faturamento", label: "Faturamento" },
   { id: "caixa", label: "Caixa" },
+  { id: "faturamento", label: "Faturamento" },
 ];
 
 export function ReceitasTabs({ current, mes }: { current: string; mes: string }) {

@@ -82,9 +82,11 @@ export default async function DespesasPage({
 
   const params = await searchParams;
   const tab =
-    params.tab === "recorrentes" || params.tab === "buckets"
+    params.tab === "avulsas" ||
+    params.tab === "recorrentes" ||
+    params.tab === "buckets"
       ? params.tab
-      : "avulsas";
+      : "geral";
   const hoje = new Date();
   const mesAtual = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}`;
   const mes = params.m ?? mesAtual;
@@ -124,6 +126,14 @@ export default async function DespesasPage({
           <DespesasTabs current={tab} mes={mes} />
 
           <div className="mt-5">
+            {tab === "geral" && (
+              <GeralTab
+                supabase={supabase}
+                inicio={inicio}
+                fim={fim}
+                catMap={catMap}
+              />
+            )}
             {tab === "avulsas" && (
               <AvulsasTab
                 supabase={supabase}
@@ -857,6 +867,306 @@ async function BucketsTab({
         </div>
       )}
     </>
+  );
+}
+
+async function GeralTab({
+  supabase,
+  inicio,
+  fim,
+  catMap,
+}: {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  inicio: string;
+  fim: string;
+  catMap: Map<string, { id: string; nome: string; cor_hex: string | null }>;
+}) {
+  // 1. Avulsas (sem recorrencia_id, não parceladas)
+  const avulsasRes = await supabase
+    .from("transacoes")
+    .select("valor, status")
+    .in("conta_id", [...CONTAS_ATIVAS_IDS])
+    .eq("tipo", "despesa")
+    .is("recorrencia_id", null)
+    .eq("parcelado", false)
+    .gte("data_competencia", inicio)
+    .lte("data_competencia", fim);
+  const avulsasRows = (avulsasRes.data ?? []) as Array<{
+    valor: number | string;
+    status: string;
+  }>;
+  let avulsasPago = 0;
+  let avulsasPrevisto = 0;
+  for (const t of avulsasRows) {
+    const v = Number(t.valor);
+    if (t.status === "paga" || t.status === "confirmada") avulsasPago += v;
+    else avulsasPrevisto += v;
+  }
+  const avulsasTotal = avulsasPago + avulsasPrevisto;
+
+  // 2. Recorrentes — transações materializadas com recorrencia_id ou parcelado
+  const recTxRes = await supabase
+    .from("transacoes")
+    .select("valor, status, parcelado, recorrencia_id")
+    .in("conta_id", [...CONTAS_ATIVAS_IDS])
+    .eq("tipo", "despesa")
+    .gte("data_competencia", inicio)
+    .lte("data_competencia", fim);
+  const recTx = (recTxRes.data ?? []) as Array<{
+    valor: number | string;
+    status: string;
+    parcelado: boolean | null;
+    recorrencia_id: string | null;
+  }>;
+  const recsMat = new Set(
+    recTx.filter((t) => t.recorrencia_id).map((t) => t.recorrencia_id!)
+  );
+
+  let recPago = 0;
+  let recPrevisto = 0;
+  for (const t of recTx) {
+    if (!t.recorrencia_id && !t.parcelado) continue; // só recorrentes/parceladas
+    const v = Number(t.valor);
+    if (t.status === "paga" || t.status === "confirmada") recPago += v;
+    else recPrevisto += v;
+  }
+  // Fixas não materializadas (esperadas pelo padrão)
+  const fixasResAll = await supabase
+    .from("recorrencias")
+    .select("id, valor_padrao, frequencia, data_inicio, dia_vencimento, tipo_valor, ativo")
+    .in("conta_id", [...CONTAS_ATIVAS_IDS])
+    .eq("tipo", "despesa")
+    .eq("ativo", true);
+  const fixasNaoMatArr = ((fixasResAll.data ?? []) as Array<{
+    id: string;
+    valor_padrao: number | string;
+    frequencia: string;
+    data_inicio: string | null;
+    dia_vencimento: number | null;
+    tipo_valor: string | null;
+  }>)
+    .filter((r) => r.tipo_valor !== "bucket")
+    .filter((r) => !recsMat.has(r.id))
+    .filter((r) => ocorrenciasNoMes(r, inicio) > 0);
+  for (const f of fixasNaoMatArr) {
+    recPrevisto += Number(f.valor_padrao) * ocorrenciasNoMes(f, inicio);
+  }
+  const recTotal = recPago + recPrevisto;
+
+  // 3. Buckets — utilizado vs provisionado
+  const bucketsRes = await supabase
+    .from("recorrencias")
+    .select("id, valor_padrao, categoria_id, frequencia, data_inicio")
+    .in("conta_id", [...CONTAS_ATIVAS_IDS])
+    .eq("tipo", "despesa")
+    .eq("tipo_valor", "bucket")
+    .eq("ativo", true);
+  const buckets = ((bucketsRes.data ?? []) as Array<{
+    id: string;
+    valor_padrao: number | string;
+    categoria_id: string | null;
+    frequencia: string;
+    data_inicio: string | null;
+  }>).filter((b) => ocorrenciasBucketNoMes(b, inicio) > 0);
+
+  // Transações por categoria pra cobrir buckets (só avulsas — não recorrencias)
+  const txCatRes = await supabase
+    .from("transacoes")
+    .select("categoria_id, valor")
+    .in("conta_id", [...CONTAS_ATIVAS_IDS])
+    .eq("tipo", "despesa")
+    .is("recorrencia_id", null)
+    .gte("data_competencia", inicio)
+    .lte("data_competencia", fim);
+  const usoPorCat = new Map<string, number>();
+  for (const t of (txCatRes.data ?? []) as Array<{ categoria_id: string | null; valor: number | string }>) {
+    if (!t.categoria_id) continue;
+    usoPorCat.set(t.categoria_id, (usoPorCat.get(t.categoria_id) ?? 0) + Number(t.valor));
+  }
+  const bucketsTeto = buckets.reduce((s, b) => s + Number(b.valor_padrao), 0);
+  const bucketsUsado = buckets.reduce(
+    (s, b) => s + (b.categoria_id ? usoPorCat.get(b.categoria_id) ?? 0 : 0),
+    0
+  );
+
+  const totalMes = avulsasTotal + recTotal;
+  const totalPagoMes = avulsasPago + recPago;
+  const totalPrevistoMes = avulsasPrevisto + recPrevisto;
+
+  return (
+    <>
+      {/* Totalizadores grandes */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
+        <Card className="!p-4">
+          <div className="text-xs text-ink-soft">Total do mês</div>
+          <div className="text-2xl font-bold mt-0.5">{formatBRL(totalMes)}</div>
+          <div className="text-[10px] text-ink-dim mt-0.5">avulsas + recorrentes</div>
+        </Card>
+        <Card className="!p-4">
+          <div className="text-xs text-ink-soft">Já pago</div>
+          <div className="text-2xl font-bold text-positive mt-0.5">
+            {formatBRL(totalPagoMes)}
+          </div>
+        </Card>
+        <Card className="!p-4">
+          <div className="text-xs text-ink-soft">Previsto</div>
+          <div className="text-2xl font-bold text-negative mt-0.5">
+            {formatBRL(totalPrevistoMes)}
+          </div>
+        </Card>
+      </div>
+
+      {/* Quebra por tipo */}
+      <div className="space-y-3">
+        <DespesaBreakdownRow
+          icon={<ArrowDownToLine className="h-4 w-4 text-lime" />}
+          titulo="Avulsas"
+          subtitulo={`${avulsasRows.length} lançamentos`}
+          total={avulsasTotal}
+          pago={avulsasPago}
+          previsto={avulsasPrevisto}
+          href={`/despesas?tab=avulsas`}
+        />
+        <DespesaBreakdownRow
+          icon={<Repeat className="h-4 w-4 text-lime" />}
+          titulo="Recorrentes"
+          subtitulo={`fixas + parceladas no mês`}
+          total={recTotal}
+          pago={recPago}
+          previsto={recPrevisto}
+          href={`/despesas?tab=recorrentes`}
+        />
+        <BucketBreakdownRow
+          buckets={buckets}
+          teto={bucketsTeto}
+          usado={bucketsUsado}
+          catMap={catMap}
+          usoPorCat={usoPorCat}
+        />
+      </div>
+    </>
+  );
+}
+
+function DespesaBreakdownRow({
+  icon,
+  titulo,
+  subtitulo,
+  total,
+  pago,
+  previsto,
+  href,
+}: {
+  icon: React.ReactNode;
+  titulo: string;
+  subtitulo: string;
+  total: number;
+  pago: number;
+  previsto: number;
+  href: string;
+}) {
+  return (
+    <a href={href}>
+      <Card className="hover:bg-elevated/30 transition-colors cursor-pointer">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-lg bg-lime/10 grid place-items-center">
+              {icon}
+            </div>
+            <div>
+              <div className="font-semibold">{titulo}</div>
+              <div className="text-[11px] text-ink-dim">{subtitulo}</div>
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="text-lg font-bold">{formatBRL(total)}</div>
+            <div className="text-[11px] text-ink-dim">
+              <span className="text-positive">{formatBRL(pago)}</span> pago ·{" "}
+              <span className="text-negative">{formatBRL(previsto)}</span> previsto
+            </div>
+          </div>
+        </div>
+      </Card>
+    </a>
+  );
+}
+
+function BucketBreakdownRow({
+  buckets,
+  teto,
+  usado,
+  catMap,
+  usoPorCat,
+}: {
+  buckets: Array<{
+    id: string;
+    valor_padrao: number | string;
+    categoria_id: string | null;
+    frequencia: string;
+  }>;
+  teto: number;
+  usado: number;
+  catMap: Map<string, { id: string; nome: string; cor_hex: string | null }>;
+  usoPorCat: Map<string, number>;
+}) {
+  const pct = teto > 0 ? Math.min(150, (usado / teto) * 100) : 0;
+  const barColor = pct > 100 ? "bg-negative" : pct > 70 ? "bg-amber-400" : "bg-lime";
+  return (
+    <a href="/despesas?tab=buckets">
+      <Card className="hover:bg-elevated/30 transition-colors cursor-pointer">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-lg bg-lime/10 grid place-items-center">
+              <PiggyBank className="h-4 w-4 text-lime" />
+            </div>
+            <div>
+              <div className="font-semibold">Buckets</div>
+              <div className="text-[11px] text-ink-dim">
+                {buckets.length} ativos · teto total {formatBRL(teto)}
+              </div>
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="text-lg font-bold">
+              <span
+                className={pct > 100 ? "text-negative" : pct > 70 ? "text-amber-400" : "text-positive"}
+              >
+                {formatBRL(usado)}
+              </span>
+              <span className="text-ink-dim text-sm font-normal"> / {formatBRL(teto)}</span>
+            </div>
+            <div className="text-[11px] text-ink-dim">{pct.toFixed(0)}% do teto</div>
+          </div>
+        </div>
+        {/* Barra agregada */}
+        <div className="w-full h-1.5 bg-bg/80 rounded-full overflow-hidden border border-line/40 mb-3">
+          <div className={`h-full ${barColor} transition-all`} style={{ width: `${Math.min(100, pct)}%` }} />
+        </div>
+        {/* Mini lista de buckets */}
+        {buckets.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+            {buckets.map((b) => {
+              const cat = b.categoria_id ? catMap.get(b.categoria_id) : null;
+              const u = b.categoria_id ? usoPorCat.get(b.categoria_id) ?? 0 : 0;
+              const t = Number(b.valor_padrao);
+              const p = t > 0 ? Math.min(150, (u / t) * 100) : 0;
+              return (
+                <div key={b.id} className="flex items-center justify-between bg-bg/40 border border-line/40 rounded-md px-2 py-1.5">
+                  <span className="text-ink-soft truncate">{cat?.nome ?? "—"}</span>
+                  <span
+                    className={`font-medium tabular-nums ${
+                      p > 100 ? "text-negative" : p > 70 ? "text-amber-400" : "text-positive"
+                    }`}
+                  >
+                    {formatBRL(u)}<span className="text-ink-dim"> / {formatBRL(t)}</span>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
+    </a>
   );
 }
 
