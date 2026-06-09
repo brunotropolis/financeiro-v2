@@ -319,6 +319,43 @@ async function AvulsasTab({
   );
 }
 
+function ocorrenciasNoMes(
+  rec: { frequencia: string; data_inicio: string | null; dia_vencimento: number | null },
+  inicioStr: string
+): number {
+  if (!rec.data_inicio) return 1;
+  const [iy, im] = inicioStr.split("-").map(Number);
+  const mesInicio = new Date(iy, im - 1, 1);
+  const di = new Date(rec.data_inicio);
+  if (di > mesInicio) return 0;
+  switch (rec.frequencia) {
+    case "mensal":
+      return 1;
+    case "semanal":
+      return 4;
+    case "quinzenal":
+      return 2;
+    case "bimestral": {
+      const diff =
+        (mesInicio.getFullYear() - di.getFullYear()) * 12 +
+        (mesInicio.getMonth() - di.getMonth());
+      return diff >= 0 && diff % 2 === 0 ? 1 : 0;
+    }
+    default:
+      return 1;
+  }
+}
+
+function ocorrenciasBucketNoMes(
+  bucket: { frequencia: string; data_inicio: string | null },
+  inicioStr: string
+): number {
+  return ocorrenciasNoMes(
+    { frequencia: bucket.frequencia, data_inicio: bucket.data_inicio, dia_vencimento: null },
+    inicioStr
+  );
+}
+
 async function RecorrentesTab({
   supabase,
   inicio,
@@ -345,8 +382,14 @@ async function RecorrentesTab({
     .eq("tipo", "despesa")
     .order("nome");
   const todasAtivas = ((recRes.data ?? []) as RecorrenciaRow[]).filter((r) => r.ativo);
-  const fixas = todasAtivas.filter((r) => r.tipo_valor !== "bucket");
-  const buckets = todasAtivas.filter((r) => r.tipo_valor === "bucket");
+
+  // Filtra pelo mês: ocorrências > 0 (significa data_inicio <= mesAtual e bate na frequência)
+  const fixas = todasAtivas
+    .filter((r) => r.tipo_valor !== "bucket")
+    .filter((r) => ocorrenciasNoMes(r, inicio) > 0);
+  const buckets = todasAtivas
+    .filter((r) => r.tipo_valor === "bucket")
+    .filter((r) => ocorrenciasBucketNoMes(r, inicio) > 0);
 
   // Parceladas futuras
   const parRes = await supabase
@@ -356,7 +399,6 @@ async function RecorrentesTab({
     )
     .in("conta_id", [...CONTAS_ATIVAS_IDS])
     .eq("parcelado", true)
-    .eq("status", "prevista")
     .gte("data_competencia", inicio)
     .lte("data_competencia", fim)
     .order("data_competencia");
@@ -389,20 +431,87 @@ async function RecorrentesTab({
   }
   const parceladas = [...groups.values()];
 
+  // Transações materializadas no mês com recorrencia_id (pra calcular pago/previsto)
+  const txMatRes = await supabase
+    .from("transacoes")
+    .select("recorrencia_id, valor, status")
+    .in("conta_id", [...CONTAS_ATIVAS_IDS])
+    .eq("tipo", "despesa")
+    .not("recorrencia_id", "is", null)
+    .gte("data_competencia", inicio)
+    .lte("data_competencia", fim);
+  const txMat = (txMatRes.data ?? []) as Array<{
+    recorrencia_id: string;
+    valor: number | string;
+    status: string;
+  }>;
+  const recsMaterializadas = new Set(txMat.map((t) => t.recorrencia_id));
+
+  // Stats do mês
+  let pagoMes = 0;
+  let previstoMes = 0;
+
+  // 1. Transações já materializadas (recorrentes ou parceladas) no mês
+  for (const t of txMat) {
+    const v = Number(t.valor);
+    if (t.status === "paga" || t.status === "confirmada") pagoMes += v;
+    else previstoMes += v;
+  }
+  // 2. Parceladas (já vêm com status no parceladasRaw)
+  for (const p of parceladasRaw) {
+    const v = Number(p.valor);
+    if (p.status === "paga" || p.status === "confirmada") pagoMes += v;
+    else previstoMes += v;
+  }
+  // 3. Fixas que ainda não materializaram no mês — soma valor_padrao × ocorrências
+  for (const f of fixas) {
+    if (recsMaterializadas.has(f.id)) continue;
+    const oc = ocorrenciasNoMes(f, inicio);
+    previstoMes += Number(f.valor_padrao) * oc;
+  }
+  // 4. Buckets — somam teto cheio (bucket é referência, não materializa)
+  for (const b of buckets) {
+    previstoMes += Number(b.valor_padrao);
+  }
+
+  const totalLancamentos = fixas.length + buckets.length + parceladas.length;
+
   return (
     <>
+      {/* Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
+        <Card className="!p-4">
+          <div className="text-xs text-ink-soft">Lançamentos</div>
+          <div className="text-xl font-bold mt-0.5">{totalLancamentos}</div>
+          <div className="text-[10px] text-ink-dim mt-0.5">
+            {fixas.length} fixas · {buckets.length} buckets · {parceladas.length} parceladas
+          </div>
+        </Card>
+        <Card className="!p-4">
+          <div className="text-xs text-ink-soft">Já pago</div>
+          <div className="text-xl font-bold text-positive mt-0.5">{formatBRL(pagoMes)}</div>
+        </Card>
+        <Card className="!p-4">
+          <div className="text-xs text-ink-soft">Previsto</div>
+          <div className="text-xl font-bold text-negative mt-0.5">{formatBRL(previstoMes)}</div>
+          <div className="text-[10px] text-ink-dim mt-0.5">
+            inclui tetos de bucket
+          </div>
+        </Card>
+      </div>
+
       {/* Fixas */}
       <section className="mb-8">
         <div className="flex items-center gap-2 mb-3">
           <Repeat className="h-4 w-4 text-lime" />
           <h2 className="text-sm font-semibold">
-            Fixas
+            Fixas no mês
             <span className="ml-2 text-ink-dim font-normal">({fixas.length})</span>
           </h2>
         </div>
 
         {fixas.length === 0 ? (
-          <EmptyState texto="Nenhuma recorrência fixa cadastrada." cta="Cadastrar em /lancar" />
+          <EmptyState texto="Nenhuma recorrência fixa nesse mês." cta="Cadastrar em /lancar" />
         ) : (
           <Card className="!p-0 overflow-hidden">
             <table className="w-full text-sm">
@@ -493,13 +602,13 @@ async function RecorrentesTab({
         <div className="flex items-center gap-2 mb-3">
           <PiggyBank className="h-4 w-4 text-lime" />
           <h2 className="text-sm font-semibold">
-            Buckets
+            Buckets no mês
             <span className="ml-2 text-ink-dim font-normal">({buckets.length})</span>
           </h2>
         </div>
 
         {buckets.length === 0 ? (
-          <EmptyState texto="Nenhum bucket cadastrado." cta="Cria em /lancar → 'Bucket'" />
+          <EmptyState texto="Nenhum bucket ativo nesse mês." cta="Cria em /lancar → 'Bucket'" />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {buckets.map((b) => {
