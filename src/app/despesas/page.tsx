@@ -5,10 +5,11 @@ import { createClient } from "@/lib/supabase/server";
 import { CONTAS_ATIVAS, CONTAS_ATIVAS_IDS } from "@/lib/constants";
 import { getProjetos } from "@/lib/catalog";
 import { formatBRL, formatDate } from "@/lib/formatters";
-import { Repeat, Layers, PiggyBank, Power, ArrowDownToLine } from "lucide-react";
+import { Repeat, Layers, PiggyBank, Power, ArrowDownToLine, Megaphone } from "lucide-react";
 import { RecorrenteToggle } from "@/app/recorrentes/recorrente-toggle";
 import { EditButton } from "@/components/edit-button";
 import { BucketTransacoesButton } from "@/components/bucket-transacoes-button";
+import { getMetaAdsMes } from "@/lib/meta-ads";
 import { DespesasTabs } from "./tabs";
 import { MesFilter } from "@/components/mes-filter";
 
@@ -133,6 +134,7 @@ export default async function DespesasPage({
                 inicio={inicio}
                 fim={fim}
                 catMap={catMap}
+                mes={mes}
               />
             )}
             {tab === "avulsas" && (
@@ -915,11 +917,13 @@ async function GeralTab({
   inicio,
   fim,
   catMap,
+  mes,
 }: {
   supabase: Awaited<ReturnType<typeof createClient>>;
   inicio: string;
   fim: string;
   catMap: Map<string, { id: string; nome: string; cor_hex: string | null }>;
+  mes: string;
 }) {
   // 1. Avulsas (sem recorrencia_id, não parceladas)
   const avulsasRes = await supabase
@@ -1032,39 +1036,91 @@ async function GeralTab({
     0
   );
 
-  // Buckets contam como "previsto" — teto reservado pro mês.
-  // Bruno aceita o double-count com avulsas da mesma categoria (decisão de negócio).
+  // Meta Ads do mês — puxa do dashboard API (sempre conta como "já pago")
+  const meta = await getMetaAdsMes(mes);
+
+  // Totais das fixas só (recorrentes regulares, sem buckets, sem parcelas)
+  // = transações já materializadas com recorrencia_id (não bucket) + fixas não materializadas
+  // - Pra simplificar: recPago + recPrevisto (excluindo parceladas e buckets, já filtrado acima)
+  //   + fixasNaoMatTotal
+  const fixasPago = recPago; // recorrentes pagas (recPago já exclui buckets)
+  const fixasPrevisto = recPrevisto + fixasNaoMatTotal;
+  const fixasTotal = fixasPago + fixasPrevisto;
+
+  // Já pago no mês (incluindo Meta Ads, que é "saiu da conta" automaticamente)
+  const jaPagoComMeta = avulsasPago + recPago + meta.gastoTotal;
+
+  // Total geral do mês = avulsas + recorrentes + tetos buckets + Meta Ads
   const totalPagoMes = avulsasPago + recPago;
   const totalPrevistoMes = avulsasPrevisto + recPrevisto + bucketsTeto;
-  const totalMes = totalPagoMes + totalPrevistoMes;
+  const totalMes = totalPagoMes + totalPrevistoMes + meta.gastoTotal;
 
   return (
     <>
-      {/* Totalizadores grandes */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
+      {/* Totalizadores — 4 boxes do Bruno */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 mb-5">
         <Card className="!p-4">
-          <div className="text-xs text-ink-soft">Total do mês</div>
+          <div className="text-xs text-ink-soft">Total fixo do mês</div>
+          <div className="text-2xl font-bold mt-0.5">{formatBRL(fixasTotal)}</div>
+          <div className="text-[10px] text-ink-dim mt-0.5">
+            recorrências fixas (sem buckets)
+          </div>
+        </Card>
+        <Card className="!p-4">
+          <div className="text-xs text-ink-soft">Previsto fixo</div>
+          <div className="text-2xl font-bold text-amber-400 mt-0.5">
+            {formatBRL(fixasPrevisto)}
+          </div>
+          <div className="text-[10px] text-ink-dim mt-0.5">
+            das fixas, ainda a pagar
+          </div>
+        </Card>
+        <Card className="!p-4">
+          <div className="text-xs text-ink-soft">Já pago + Meta Ads</div>
+          <div className="text-2xl font-bold text-positive mt-0.5">
+            {formatBRL(jaPagoComMeta)}
+          </div>
+          <div className="text-[10px] text-ink-dim mt-0.5">
+            pago + R$ {meta.gastoTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Meta
+          </div>
+        </Card>
+        <Card className="!p-4">
+          <div className="text-xs text-ink-soft">Total do mês (com Meta)</div>
           <div className="text-2xl font-bold mt-0.5">{formatBRL(totalMes)}</div>
           <div className="text-[10px] text-ink-dim mt-0.5">
-            avulsas + recorrentes + tetos buckets
-          </div>
-        </Card>
-        <Card className="!p-4">
-          <div className="text-xs text-ink-soft">Já pago</div>
-          <div className="text-2xl font-bold text-positive mt-0.5">
-            {formatBRL(totalPagoMes)}
-          </div>
-        </Card>
-        <Card className="!p-4">
-          <div className="text-xs text-ink-soft">Previsto</div>
-          <div className="text-2xl font-bold text-negative mt-0.5">
-            {formatBRL(totalPrevistoMes)}
+            tudo + tetos buckets + Meta
           </div>
         </Card>
       </div>
 
       {/* Quebra por tipo */}
       <div className="space-y-3">
+        {/* Meta Ads — sempre 100% pago */}
+        {meta.gastoTotal > 0 && (
+          <Card className="border-amber-400/30 bg-amber-400/[0.04]">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-lg bg-amber-400/15 grid place-items-center">
+                  <Megaphone className="h-4 w-4 text-amber-400" />
+                </div>
+                <div>
+                  <div className="font-semibold">Meta Ads</div>
+                  <div className="text-[11px] text-ink-dim">
+                    {meta.numCampanhas} campanhas · auto via Dashboard Meta
+                  </div>
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-lg font-bold">{formatBRL(meta.gastoTotal)}</div>
+                <div className="text-[11px] text-ink-dim">
+                  <span className="text-positive">100% pago</span> · ROAS Real{" "}
+                  {meta.roasReal.toFixed(2)}x
+                </div>
+              </div>
+            </div>
+          </Card>
+        )}
+
         <DespesaBreakdownRow
           icon={<ArrowDownToLine className="h-4 w-4 text-lime" />}
           titulo="Avulsas"

@@ -3,9 +3,8 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import { Card } from "@/components/ui/card";
 import { MesFilter } from "@/components/mes-filter";
-import { GreennUpdateButton } from "@/components/greenn-update-button";
-import { getSaldoGreenn } from "@/lib/queries";
 import { projetar6Meses } from "@/lib/projecao";
+import { getMetaAdsMes } from "@/lib/meta-ads";
 import { CONTAS_ATIVAS, CONTAS_ATIVAS_IDS } from "@/lib/constants";
 import { formatBRL, formatBRLCompact } from "@/lib/formatters";
 import { cn } from "@/lib/utils";
@@ -13,7 +12,6 @@ import {
   TrendingUp,
   TrendingDown,
   Clock,
-  Sparkles,
   CheckCircle,
 } from "lucide-react";
 
@@ -73,10 +71,7 @@ export default async function DashboardPage({
   const mes = params.m ?? mesAtual;
   const { inicio, fim, label: mesLabel } = rangeFromMonth(mes);
 
-  // 1. Greenn snapshot
-  const greenn = await getSaldoGreenn();
-
-  // 2. Receitas do mês — Caixa (recebidas + previstas) — lógica = tab Caixa de /receitas
+  // 1. Receitas do mês — Caixa (recebidas + previstas) — lógica = tab Caixa de /receitas
   const orFilter = `and(data_recebimento.gte.${inicio},data_recebimento.lte.${fim}),and(data_prevista_pagamento.gte.${inicio},data_prevista_pagamento.lte.${fim},status.neq.recebido)`;
   const receRes = await supabase
     .from("receitas_brutas")
@@ -192,17 +187,21 @@ export default async function DashboardPage({
     .filter((b) => ocorrenciasMensal(b, inicio) > 0)
     .reduce((s, b) => s + Number(b.valor_padrao), 0);
 
-  // 4. Totais finais
-  // Despesas previstas = Tudo que tá previsto pra cair no mês (incluindo tetos cheios de bucket)
-  const despesasPrevistas =
-    avulsasPrevisto + recPrevisto + fixasNaoMatTotal + bucketsTeto;
+  // 4. Meta Ads (sempre conta como pago — já saiu)
+  const meta = await getMetaAdsMes(mes);
 
-  // Despesas reais = O que efetivamente foi gasto/lançado
-  // - Avulsas (todas, pago + previsto)
-  // - Recorrentes/parcelas (todas)
-  // - Buckets: só o USADO (não o teto)
+  // 5. Totais finais
+  // Despesas previstas = Tudo previsto pra cair (incluindo tetos cheios buckets + Meta)
+  const despesasPrevistas =
+    avulsasPrevisto + recPrevisto + fixasNaoMatTotal + bucketsTeto + meta.gastoTotal;
+
+  // Despesas reais = lançado/realizado:
+  // - Avulsas (pago + previsto)
+  // - Recorrentes/parcelas
+  // - Buckets USADO
+  // - Meta Ads (já saiu)
   const despesasReais =
-    avulsasPago + avulsasPrevisto + recPago + recPrevisto + bucketsUsado;
+    avulsasPago + avulsasPrevisto + recPago + recPrevisto + bucketsUsado + meta.gastoTotal;
 
   // Resultado = entradas - despesas reais
   const resultadoMes = entradasMes - despesasReais;
@@ -288,46 +287,15 @@ export default async function DashboardPage({
             </Card>
           </div>
 
-          {/* Greenn + Próximos vencimentos */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-5">
-            <Card variant="lime" className="lg:col-span-2 relative overflow-hidden">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <div className="h-6 w-6 rounded-md bg-bg/10 grid place-items-center">
-                    <Sparkles className="h-3.5 w-3.5" />
-                  </div>
-                  <span className="text-sm font-semibold">Saldo Greenn</span>
-                </div>
-                <span className="text-[11px] bg-bg/15 rounded px-2 py-0.5">
-                  {greenn.capturado_em
-                    ? `atualizado ${new Date(greenn.capturado_em).toLocaleDateString("pt-BR")}`
-                    : "sem snapshot"}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-3 gap-4">
-                <GreennCol label="Em caixa" valor={greenn.disponivel} />
-                <GreennCol label="A receber" valor={greenn.disponivel + greenn.pendente} />
-                <GreennCol label="Antecipável" valor={greenn.antecipavel} dim />
-              </div>
-
-              <div className="mt-5 text-xs flex items-center justify-between gap-3">
-                <GreennUpdateButton className="bg-bg text-lime rounded-lg px-3 py-1.5 font-semibold hover:bg-bg/80">
-                  Atualizar saldo
-                </GreennUpdateButton>
-                <span className="text-[10px] text-bg/60">
-                  ⚠️ saldo Greenn não entra automático em &quot;Entradas&quot; — lance saques como receita avulsa
-                </span>
-              </div>
-            </Card>
-
+          {/* Próximos vencimentos (Greenn foi pra /receitas tab Faturamento) */}
+          <div className="grid grid-cols-1 gap-4 mb-5">
             <Card>
               <div className="flex items-center justify-between mb-3">
                 <span className="text-sm font-semibold">Próximos vencimentos</span>
                 <Clock className="h-4 w-4 text-ink-dim" />
               </div>
               <div className="text-sm text-ink-dim">
-                Sprint 2 vai listar recorrências e parcelas com vencimento próximo.
+                Sprint futura vai listar recorrências e parcelas com vencimento próximo.
               </div>
             </Card>
           </div>
@@ -423,11 +391,3 @@ export default async function DashboardPage({
   );
 }
 
-function GreennCol({ label, valor, dim }: { label: string; valor: number; dim?: boolean }) {
-  return (
-    <div>
-      <div className="text-[11px] text-bg/70">{label}</div>
-      <div className={`text-xl font-bold ${dim ? "text-bg/60" : ""}`}>{formatBRL(valor)}</div>
-    </div>
-  );
-}
