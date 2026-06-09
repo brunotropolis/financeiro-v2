@@ -7,6 +7,7 @@ type Payload = {
     | "despesa_avulsa"
     | "despesa_recorrente"
     | "despesa_parcelada"
+    | "despesa_bucket"
     | "receita_avulsa"
     | "receita_greenn";
   valor: number;
@@ -93,6 +94,36 @@ export async function POST(request: NextRequest) {
       ]);
       if (error) throw new Error(error.message);
       return NextResponse.json({ ok: true, message: "Despesa criada." });
+    }
+
+    if (tipo === "despesa_bucket") {
+      if (!body.categoria_id) {
+        return NextResponse.json(
+          { error: "Bucket precisa de categoria" },
+          { status: 400 }
+        );
+      }
+      const { error } = await db.from("recorrencias").insert([
+        {
+          nome: body.descricao ?? "(bucket sem nome)",
+          tipo: "despesa",
+          valor_padrao: valor,
+          frequencia: "mensal",
+          tipo_valor: "bucket",
+          entidade_id,
+          categoria_id: body.categoria_id,
+          conta_id,
+          projeto_id: body.projeto_id ?? null,
+          data_inicio: body.data_competencia ?? new Date().toISOString().slice(0, 10),
+          ativo: true,
+          ...audit,
+        },
+      ]);
+      if (error) throw new Error(error.message);
+      return NextResponse.json({
+        ok: true,
+        message: `Bucket criado: teto mensal R$ ${valor.toFixed(2)}.`,
+      });
     }
 
     if (tipo === "despesa_recorrente") {

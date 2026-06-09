@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { CONTAS_ATIVAS, CONTAS_ATIVAS_IDS } from "@/lib/constants";
 import { getProjetos } from "@/lib/catalog";
 import { formatBRL } from "@/lib/formatters";
-import { Repeat, Layers, Power } from "lucide-react";
+import { Repeat, Layers, Power, PiggyBank } from "lucide-react";
 import { RecorrenteToggle } from "./recorrente-toggle";
 
 export const dynamic = "force-dynamic";
@@ -50,9 +50,21 @@ export default async function RecorrentesPage() {
     .in("conta_id", [...CONTAS_ATIVAS_IDS])
     .eq("tipo", "despesa")
     .order("nome");
-  const recorrencias = ((recRes.data ?? []) as RecorrenciaRow[]).filter((r) => r.ativo);
-  const projetos = await getProjetos();
+  const todasAtivas = ((recRes.data ?? []) as RecorrenciaRow[]).filter((r) => r.ativo);
+  const recorrencias = todasAtivas.filter((r) => r.tipo_valor !== "bucket");
+  const buckets = todasAtivas.filter((r) => r.tipo_valor === "bucket");
+  const [projetos, categoriasList] = await Promise.all([
+    getProjetos(),
+    (async () => {
+      const { data } = await supabase
+        .from("categorias")
+        .select("id, nome, cor_hex")
+        .eq("ativo", true);
+      return ((data ?? []) as Array<{ id: string; nome: string; cor_hex: string | null }>);
+    })(),
+  ]);
   const projMap = new Map(projetos.map((p) => [p.id, p]));
+  const catMap = new Map(categoriasList.map((c) => [c.id, c]));
 
   // 2. Parceladas em aberto (status=prevista) das 3 contas
   const hoje = new Date().toISOString().slice(0, 10);
@@ -188,6 +200,65 @@ export default async function RecorrentesPage() {
                   </tbody>
                 </table>
               </Card>
+            )}
+          </section>
+
+          {/* Buckets — tetos mensais por categoria */}
+          <section className="mb-8">
+            <div className="flex items-center gap-2 mb-3">
+              <PiggyBank className="h-4 w-4 text-lime" />
+              <h2 className="text-sm font-semibold">
+                Buckets (teto mensal)
+                <span className="ml-2 text-ink-dim font-normal">({buckets.length})</span>
+              </h2>
+            </div>
+
+            {buckets.length === 0 ? (
+              <EmptyState
+                texto="Nenhum bucket cadastrado."
+                cta="Cria um em /lancar → 'Bucket (teto mensal)'"
+              />
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {buckets.map((b) => {
+                  const cat = b.categoria_id ? catMap.get(b.categoria_id) : null;
+                  const proj = b.projeto_id ? projMap.get(b.projeto_id) : null;
+                  return (
+                    <Card key={b.id}>
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="min-w-0">
+                          <div className="font-medium truncate">{b.nome}</div>
+                          {cat && (
+                            <div className="text-[10px] text-ink-dim mt-0.5">
+                              categoria: {cat.nome}
+                            </div>
+                          )}
+                        </div>
+                        <span className="text-[10px] uppercase tracking-wider bg-lime/15 text-lime border border-lime/30 rounded px-1.5 py-0.5">
+                          bucket
+                        </span>
+                      </div>
+                      <div className="flex items-end justify-between mt-3">
+                        <div>
+                          <div className="text-[10px] text-ink-dim">Teto mensal</div>
+                          <div className="text-lg font-bold">
+                            {formatBRL(Number(b.valor_padrao))}
+                          </div>
+                        </div>
+                        {proj && (
+                          <span className="inline-flex items-center gap-1.5 text-[11px] text-ink-soft">
+                            <span
+                              className="h-1.5 w-1.5 rounded-full"
+                              style={{ background: proj.cor ?? "#71717a" }}
+                            />
+                            {proj.nome}
+                          </span>
+                        )}
+                      </div>
+                    </Card>
+                  );
+                })}
+              </div>
             )}
           </section>
 

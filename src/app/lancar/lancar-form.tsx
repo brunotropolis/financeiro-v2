@@ -7,7 +7,7 @@ import {
   ArrowUpToLine,
   Repeat,
   Layers,
-  Sparkles,
+  PiggyBank,
   Check,
   AlertCircle,
 } from "lucide-react";
@@ -20,8 +20,8 @@ type Tipo =
   | "despesa_avulsa"
   | "despesa_recorrente"
   | "despesa_parcelada"
-  | "receita_avulsa"
-  | "receita_greenn";
+  | "despesa_bucket"
+  | "receita_avulsa";
 
 const TIPOS: Array<{
   id: Tipo;
@@ -52,17 +52,17 @@ const TIPOS: Array<{
     side: "despesa",
   },
   {
+    id: "despesa_bucket",
+    label: "Bucket (teto mensal)",
+    desc: "Ex: Alimentação R$ 5k/mês",
+    icon: PiggyBank,
+    side: "despesa",
+  },
+  {
     id: "receita_avulsa",
     label: "Receita avulsa",
     desc: "Entrada manual",
     icon: ArrowUpToLine,
-    side: "receita",
-  },
-  {
-    id: "receita_greenn",
-    label: "Receita Greenn",
-    desc: "Entrada com saldo Greenn",
-    icon: Sparkles,
     side: "receita",
   },
 ];
@@ -110,7 +110,7 @@ export function LancarForm({
   const isReceita = tipo.startsWith("receita");
   const isParcelada = tipo === "despesa_parcelada";
   const isRecorrente = tipo === "despesa_recorrente";
-  const isGreenn = tipo === "receita_greenn";
+  const isBucket = tipo === "despesa_bucket";
 
   const categorias = isDespesa ? categoriasDespesa : categoriasReceita;
 
@@ -135,7 +135,15 @@ export function LancarForm({
         projeto_id: projetoId || null,
       };
 
-      if (isDespesa) {
+      if (isBucket) {
+        if (!categoriaId) {
+          setErro("Bucket precisa de categoria (ex: Alimentação, Mercado…)");
+          setEnviando(false);
+          return;
+        }
+        payload.descricao = descricao || "(bucket sem nome)";
+        payload.data_competencia = data;
+      } else if (isDespesa) {
         payload.descricao = descricao || "(sem descrição)";
         payload.data_competencia = data;
         payload.status = status;
@@ -148,7 +156,7 @@ export function LancarForm({
         }
       } else {
         payload.origem_id =
-          origemId || origens.find((o) => o.slug === (isGreenn ? "greenn" : "manual"))?.id || null;
+          origemId || origens.find((o) => o.slug === "manual")?.id || null;
         payload.produto_nome = descricao || null;
         payload.data_venda = `${competencia}-01`;
         payload.status = statusReceita;
@@ -278,11 +286,21 @@ export function LancarForm({
           </Row>
 
           {isDespesa ? (
-            <Row label={isRecorrente ? "Início" : "Data"}>
+            <Row
+              label={
+                isBucket
+                  ? "Mês do teto"
+                  : isRecorrente
+                    ? "Início"
+                    : "Data"
+              }
+            >
               <input
-                type="date"
-                value={data}
-                onChange={(e) => setData(e.target.value)}
+                type={isBucket ? "month" : "date"}
+                value={isBucket ? data.slice(0, 7) : data}
+                onChange={(e) =>
+                  setData(isBucket ? `${e.target.value}-01` : e.target.value)
+                }
                 className="w-full bg-bg border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-lime"
               />
             </Row>
@@ -424,7 +442,7 @@ export function LancarForm({
           </div>
         )}
 
-        {isDespesa && !isRecorrente && (
+        {isDespesa && !isRecorrente && !isBucket && (
           <Row label="Status">
             <div className="flex gap-2">
               <Toggle
@@ -439,6 +457,14 @@ export function LancarForm({
               />
             </div>
           </Row>
+        )}
+
+        {isBucket && (
+          <div className="text-[11px] text-ink-dim leading-relaxed border border-line/40 rounded-lg p-3 bg-bg/40">
+            <strong className="text-lime">Bucket</strong> = teto mensal de gasto por
+            categoria. Não materializa transação — só serve de referência. Cada despesa
+            avulsa que você lançar nessa mesma categoria conta contra o teto.
+          </div>
         )}
       </div>
 
