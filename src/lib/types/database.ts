@@ -63,6 +63,17 @@ export type Database = {
         notas: string | null;
         projeto_id: string | null;
       }>;
+      faturamento_snapshots: Row<{
+        id: string;
+        mes_referencia: string;
+        fonte: string;
+        fonte_label: string;
+        valor_bruto: number | string;
+        valor_liquido: number | string;
+        snap_em: string;
+        snap_por: string | null;
+        metadata: Record<string, unknown> | null;
+      }>;
       greenn_saldos: Row<{
         id: string;
         disponivel: number | string;

@@ -5,7 +5,8 @@ import { createClient } from "@/lib/supabase/server";
 import { getMetaAdsMes } from "@/lib/meta-ads";
 import { formatBRL } from "@/lib/formatters";
 import { HistoricoNav } from "./nav";
-import { Sparkles, TrendingUp, ShoppingBag, ArrowUpToLine } from "lucide-react";
+import { FecharMesButton } from "./fechar-mes-button";
+import { Sparkles, TrendingUp, ShoppingBag, ArrowUpToLine, Lock } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,8 @@ type MesAggregado = {
   manualPorOrigem: Map<string, number>; // receitas lançadas manualmente agrupadas por origem
   totalManual: number;
   total: number; // meta + manual
+  fechado: boolean; // true se tem snapshot na tabela
+  fechadoEm: string | null;
 };
 
 function mesIsoFromOffset(baseIso: string, offset: number): string {
@@ -71,6 +74,31 @@ export default async function HistoricoPage({
   // Gera 4 meses: ate-3, ate-2, ate-1, ate (ordem cronológica)
   const mesesDaJanela = [3, 2, 1, 0].map((off) => mesIsoFromOffset(ateMes, -off));
 
+  // Busca snapshots de todos os meses da janela (uma só query)
+  const snapsRes = await supabase
+    .from("faturamento_snapshots")
+    .select("mes_referencia, fonte, fonte_label, valor_liquido, snap_em")
+    .in("mes_referencia", mesesDaJanela);
+  const snapshotsPorMes = new Map<
+    string,
+    Array<{ fonte: string; fonte_label: string; valor: number; snap_em: string }>
+  >();
+  for (const s of (snapsRes.data ?? []) as Array<{
+    mes_referencia: string;
+    fonte: string;
+    fonte_label: string;
+    valor_liquido: number | string;
+    snap_em: string;
+  }>) {
+    if (!snapshotsPorMes.has(s.mes_referencia)) snapshotsPorMes.set(s.mes_referencia, []);
+    snapshotsPorMes.get(s.mes_referencia)!.push({
+      fonte: s.fonte,
+      fonte_label: s.fonte_label,
+      valor: Number(s.valor_liquido),
+      snap_em: s.snap_em,
+    });
+  }
+
   // Calcula cada mês em paralelo
   const meses = await Promise.all(
     mesesDaJanela.map(async (mesIso): Promise<MesAggregado> => {
@@ -84,9 +112,40 @@ export default async function HistoricoPage({
           manualPorOrigem: new Map(),
           totalManual: 0,
           total: 0,
+          fechado: false,
+          fechadoEm: null,
         };
       }
 
+      // Se tem snapshot, usa ele (mês fechado — congelado)
+      const snaps = snapshotsPorMes.get(mesIso);
+      if (snaps && snaps.length > 0) {
+        const greennSnap = snaps.find((s) => s.fonte === "greenn_meta");
+        const manuaisSnaps = snaps.filter((s) => s.fonte !== "greenn_meta");
+        const manualPorOrigem = new Map<string, number>();
+        for (const s of manuaisSnaps) {
+          const slug = s.fonte.startsWith("manual:") ? s.fonte.slice(7) : s.fonte;
+          manualPorOrigem.set(slug, s.valor);
+        }
+        const totalManual = manuaisSnaps.reduce((s, x) => s + x.valor, 0);
+        const metaFat = greennSnap?.valor ?? 0;
+        const snapMaisRecente = snaps.reduce(
+          (a, b) => (a > b.snap_em ? a : b.snap_em),
+          snaps[0].snap_em
+        );
+        return {
+          mesIso,
+          label,
+          metaFaturamento: metaFat,
+          manualPorOrigem,
+          totalManual,
+          total: metaFat + totalManual,
+          fechado: true,
+          fechadoEm: snapMaisRecente,
+        };
+      }
+
+      // Senão, calcula ao vivo
       const [meta, receitasRes] = await Promise.all([
         getMetaAdsMes(mesIso),
         supabase
@@ -111,6 +170,8 @@ export default async function HistoricoPage({
         manualPorOrigem,
         totalManual,
         total: meta.faturamentoLiquido + totalManual,
+        fechado: false,
+        fechadoEm: null,
       };
     })
   );
@@ -184,7 +245,19 @@ export default async function HistoricoPage({
                         key={m.mesIso}
                         className="text-right px-4 py-2.5 font-medium whitespace-nowrap"
                       >
-                        {m.label}
+                        <div className="flex items-center justify-end gap-1.5">
+                          {m.fechado && (
+                            <Lock className="h-3 w-3 text-lime" />
+                          )}
+                          <span>{m.label}</span>
+                        </div>
+                        <div className="font-normal normal-case mt-0.5">
+                          <FecharMesButton
+                            mesIso={m.mesIso}
+                            fechado={m.fechado}
+                            disabled={isAntesDeAbril(m.mesIso)}
+                          />
+                        </div>
                       </th>
                     ))}
                     <th className="text-right px-4 py-2.5 font-medium whitespace-nowrap bg-surface">

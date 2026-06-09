@@ -354,8 +354,11 @@ function ocorrenciasNoMes(
   if (!rec.data_inicio) return 1;
   const [iy, im] = inicioStr.split("-").map(Number);
   const mesInicio = new Date(iy, im - 1, 1);
+  const mesFim = new Date(iy, im, 0); // último dia do mês
   const di = new Date(rec.data_inicio);
-  if (di > mesInicio) return 0;
+  // Se a data_inicio está depois do FIM do mês, não conta.
+  // (data_inicio dentro do mês conta normal — ex: bucket começa dia 5, ainda aparece em junho)
+  if (di > mesFim) return 0;
   switch (rec.frequencia) {
     case "mensal":
       return 1;

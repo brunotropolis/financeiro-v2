@@ -35,8 +35,10 @@ function ocorrenciasMensal(rec: { frequencia: string; data_inicio: string | null
   if (!rec.data_inicio) return 1;
   const [iy, im] = inicioStr.split("-").map(Number);
   const mesInicio = new Date(iy, im - 1, 1);
+  const mesFim = new Date(iy, im, 0);
   const di = new Date(rec.data_inicio);
-  if (di > mesInicio) return 0;
+  // Conta se data_inicio cai dentro ou antes do mês (não só antes do dia 1)
+  if (di > mesFim) return 0;
   switch (rec.frequencia) {
     case "mensal":
       return 1;
