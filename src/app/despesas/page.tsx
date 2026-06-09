@@ -992,9 +992,11 @@ async function GeralTab({
     .filter((r) => r.tipo_valor !== "bucket")
     .filter((r) => !recsMat.has(r.id))
     .filter((r) => ocorrenciasNoMes(r, inicio) > 0);
+  let fixasNaoMatTotal = 0;
   for (const f of fixasNaoMatArr) {
-    recPrevisto += Number(f.valor_padrao) * ocorrenciasNoMes(f, inicio);
+    fixasNaoMatTotal += Number(f.valor_padrao) * ocorrenciasNoMes(f, inicio);
   }
+  recPrevisto += fixasNaoMatTotal;
   const recTotal = recPago + recPrevisto;
 
   // 3. Buckets — utilizado vs provisionado
