@@ -989,9 +989,11 @@ async function GeralTab({
     0
   );
 
-  const totalMes = avulsasTotal + recTotal;
+  // Buckets contam como "previsto" — teto reservado pro mês.
+  // Bruno aceita o double-count com avulsas da mesma categoria (decisão de negócio).
   const totalPagoMes = avulsasPago + recPago;
-  const totalPrevistoMes = avulsasPrevisto + recPrevisto;
+  const totalPrevistoMes = avulsasPrevisto + recPrevisto + bucketsTeto;
+  const totalMes = totalPagoMes + totalPrevistoMes;
 
   return (
     <>
@@ -1000,7 +1002,9 @@ async function GeralTab({
         <Card className="!p-4">
           <div className="text-xs text-ink-soft">Total do mês</div>
           <div className="text-2xl font-bold mt-0.5">{formatBRL(totalMes)}</div>
-          <div className="text-[10px] text-ink-dim mt-0.5">avulsas + recorrentes</div>
+          <div className="text-[10px] text-ink-dim mt-0.5">
+            avulsas + recorrentes + tetos buckets
+          </div>
         </Card>
         <Card className="!p-4">
           <div className="text-xs text-ink-soft">Já pago</div>
