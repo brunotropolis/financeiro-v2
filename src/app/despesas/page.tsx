@@ -955,13 +955,14 @@ async function GeralTab({
   // 3. Buckets — utilizado vs provisionado
   const bucketsRes = await supabase
     .from("recorrencias")
-    .select("id, valor_padrao, categoria_id, frequencia, data_inicio")
+    .select("id, nome, valor_padrao, categoria_id, frequencia, data_inicio")
     .in("conta_id", [...CONTAS_ATIVAS_IDS])
     .eq("tipo", "despesa")
     .eq("tipo_valor", "bucket")
     .eq("ativo", true);
   const buckets = ((bucketsRes.data ?? []) as Array<{
     id: string;
+    nome: string;
     valor_padrao: number | string;
     categoria_id: string | null;
     frequencia: string;
@@ -1105,6 +1106,7 @@ function BucketBreakdownRow({
 }: {
   buckets: Array<{
     id: string;
+    nome: string;
     valor_padrao: number | string;
     categoria_id: string | null;
     frequencia: string;
@@ -1156,10 +1158,15 @@ function BucketBreakdownRow({
               const t = Number(b.valor_padrao);
               const p = t > 0 ? Math.min(150, (u / t) * 100) : 0;
               return (
-                <div key={b.id} className="flex items-center justify-between bg-bg/40 border border-line/40 rounded-md px-2 py-1.5">
-                  <span className="text-ink-soft truncate">{cat?.nome ?? "—"}</span>
+                <div key={b.id} className="flex items-center justify-between bg-bg/40 border border-line/40 rounded-md px-2 py-1.5 gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-ink truncate">{b.nome}</div>
+                    {cat && (
+                      <div className="text-[9px] text-ink-dim truncate">{cat.nome}</div>
+                    )}
+                  </div>
                   <span
-                    className={`font-medium tabular-nums ${
+                    className={`font-medium tabular-nums whitespace-nowrap ${
                       p > 100 ? "text-negative" : p > 70 ? "text-amber-400" : "text-positive"
                     }`}
                   >
