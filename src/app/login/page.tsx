@@ -34,7 +34,10 @@ export default function LoginPage() {
           <div className="h-8 w-8 rounded-lg bg-lime grid place-items-center">
             <span className="text-bg font-bold text-sm">●</span>
           </div>
-          <span className="text-lg font-semibold tracking-wider">CAIXA</span>
+          <span className="text-base font-semibold tracking-wide">
+            Controle Financeiro
+            <span className="text-ink-dim font-normal"> | brunotropolis</span>
+          </span>
         </div>
 
         <div className="bg-surface border border-line/60 rounded-2xl p-6">

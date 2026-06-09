@@ -9,8 +9,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Caixa — Financeiro v2",
-  description: "Controle de caixa simples: faturamento, gastos e projeção 6 meses.",
+  title: "Controle Financeiro | brunotropolis",
+  description: "Faturamento, gastos e projeção de caixa.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

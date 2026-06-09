@@ -40,7 +40,7 @@ export function Sidebar({ userEmail }: { userEmail?: string }) {
         </div>
         <div className="min-w-0">
           <div className="text-sm font-medium truncate">{userEmail ?? "Bruno"}</div>
-          <div className="text-[11px] text-ink-dim truncate">Caixa v2</div>
+          <div className="text-[11px] text-ink-dim truncate">brunotropolis</div>
         </div>
       </div>
 
@@ -94,7 +94,10 @@ export function Sidebar({ userEmail }: { userEmail?: string }) {
         <div className="h-5 w-5 rounded-md bg-lime/15 grid place-items-center">
           <span className="text-lime text-xs">●</span>
         </div>
-        <span className="text-xs text-ink-soft font-medium tracking-wider">CAIXA</span>
+        <span className="text-[11px] text-ink-soft font-medium tracking-wide">
+          Controle Financeiro
+          <span className="text-ink-dim"> | brunotropolis</span>
+        </span>
       </div>
     </aside>
   );
