@@ -19,10 +19,10 @@ type Categoria = { id: string; nome: string };
 type Projeto = { id: string; nome: string; cor: string | null };
 
 export type EditableEntry = {
-  kind: "transacao" | "recorrencia" | "bucket";
+  kind: "transacao" | "recorrencia" | "bucket" | "receita";
   id: string;
   // Common
-  descricao: string; // ou nome se recorrencia
+  descricao: string; // ou nome se recorrencia / produto_nome se receita
   valor: number;
   conta_id: string | null;
   categoria_id: string | null;
@@ -34,23 +34,33 @@ export type EditableEntry = {
   dia_vencimento?: number | null;
   frequencia?: string;
   data_inicio?: string;
+  // Receita
+  origem_id?: string | null;
+  data_venda?: string;
+  data_prevista_pagamento?: string | null;
+  data_recebimento?: string | null;
 };
+
+export type OrigemOpt = { id: string; nome: string };
 
 export function EditEntryModal({
   entry,
   categorias,
   projetos,
+  origens,
   onClose,
 }: {
   entry: EditableEntry;
   categorias: Categoria[];
   projetos: Projeto[];
+  origens?: OrigemOpt[];
   onClose: () => void;
 }) {
   const router = useRouter();
   const isTrans = entry.kind === "transacao";
   const isRec = entry.kind === "recorrencia";
   const isBucket = entry.kind === "bucket";
+  const isReceita = entry.kind === "receita";
 
   const [descricao, setDescricao] = useState(entry.descricao);
   const [valor, setValor] = useState(formatBRLEditable(entry.valor));
@@ -62,6 +72,11 @@ export function EditEntryModal({
   const [dataInicio, setDataInicio] = useState(entry.data_inicio ?? "");
   const [diaVencimento, setDiaVencimento] = useState<number>(entry.dia_vencimento ?? 1);
   const [frequencia, setFrequencia] = useState(entry.frequencia ?? "mensal");
+  const [origemId, setOrigemId] = useState(entry.origem_id ?? "");
+  const [dataVenda, setDataVenda] = useState(entry.data_venda ?? "");
+  const [dataPrevista, setDataPrevista] = useState(entry.data_prevista_pagamento ?? "");
+  const [dataRecebimento, setDataRecebimento] = useState(entry.data_recebimento ?? "");
+  const [statusReceita, setStatusReceita] = useState(entry.status ?? "previsto");
 
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -76,17 +91,35 @@ export function EditEntryModal({
     }
     setSaving(true);
     try {
-      const path =
-        isTrans
+      const path = isReceita
+        ? `/api/receitas/${entry.id}`
+        : isTrans
           ? `/api/transacoes/${entry.id}`
           : `/api/recorrentes/${entry.id}`;
-      const payload: Record<string, unknown> = {
-        conta_id: contaId || null,
-        categoria_id: categoriaId || null,
-        projeto_id: projetoId || null,
-      };
+      const payload: Record<string, unknown> = isReceita
+        ? { projeto_id: projetoId || null }
+        : {
+            conta_id: contaId || null,
+            categoria_id: categoriaId || null,
+            projeto_id: projetoId || null,
+          };
 
-      if (isTrans) {
+      if (isReceita) {
+        payload.produto_nome = descricao;
+        payload.valor_bruto = valorNum;
+        payload.valor_liquido = valorNum;
+        payload.taxas = 0;
+        payload.data_venda = dataVenda;
+        payload.status = statusReceita;
+        payload.origem_id = origemId || null;
+        payload.data_prevista_pagamento = dataPrevista || null;
+        if (statusReceita === "recebido") {
+          payload.data_recebimento =
+            dataRecebimento || new Date().toISOString().slice(0, 10);
+        } else {
+          payload.data_recebimento = null;
+        }
+      } else if (isTrans) {
         payload.descricao = descricao;
         payload.valor = valorNum;
         payload.data_competencia = dataCompetencia;
@@ -127,9 +160,11 @@ export function EditEntryModal({
     setDeleting(true);
     setErro(null);
     try {
-      const path = isTrans
-        ? `/api/transacoes/${entry.id}`
-        : `/api/recorrentes/${entry.id}`;
+      const path = isReceita
+        ? `/api/receitas/${entry.id}`
+        : isTrans
+          ? `/api/transacoes/${entry.id}`
+          : `/api/recorrentes/${entry.id}`;
       const res = await fetch(path, { method: "DELETE" });
       const out = await res.json().catch(() => ({}));
       if (!res.ok || out.error) throw new Error(out.error || `Erro ${res.status}`);
@@ -144,9 +179,11 @@ export function EditEntryModal({
 
   const titulo = isBucket
     ? "Editar bucket"
-    : isRec
-      ? "Editar recorrência"
-      : "Editar despesa";
+    : isReceita
+      ? "Editar receita"
+      : isRec
+        ? "Editar recorrência"
+        : "Editar despesa";
 
   return (
     <div
@@ -165,7 +202,7 @@ export function EditEntryModal({
         </div>
 
         <div className="space-y-3">
-          <Field label={isTrans ? "Descrição" : "Nome"}>
+          <Field label={isTrans ? "Descrição" : isReceita ? "Produto/Cliente" : "Nome"}>
             <input
               value={descricao}
               onChange={(e) => setDescricao(e.target.value)}
@@ -174,7 +211,7 @@ export function EditEntryModal({
           </Field>
 
           <div className="grid grid-cols-2 gap-3">
-            <Field label={isBucket ? "Teto" : "Valor (R$)"}>
+            <Field label={isBucket ? "Teto" : isReceita ? "Faturamento (R$)" : "Valor (R$)"}>
               <input
                 value={valor}
                 onChange={(e) => setValor(e.target.value)}
@@ -183,57 +220,117 @@ export function EditEntryModal({
                 className="w-full bg-bg border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-lime"
               />
             </Field>
-            <Field label="Conta">
-              <select
-                value={contaId}
-                onChange={(e) => setContaId(e.target.value)}
-                className="w-full bg-bg border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-lime"
-              >
-                {CONTAS_ATIVAS.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.nome} ({c.apelido})
-                  </option>
-                ))}
-              </select>
-            </Field>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Categoria">
-              <select
-                value={categoriaId}
-                onChange={(e) => setCategoriaId(e.target.value)}
-                className="w-full bg-bg border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-lime"
-              >
-                <option value="">— sem categoria —</option>
-                {categorias.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.nome}
-                  </option>
-                ))}
-              </select>
-            </Field>
-
-            {isTrans ? (
-              <Field label="Data">
-                <input
-                  type="date"
-                  value={dataCompetencia}
-                  onChange={(e) => setDataCompetencia(e.target.value)}
+            {isReceita ? (
+              <Field label="Origem">
+                <select
+                  value={origemId}
+                  onChange={(e) => setOrigemId(e.target.value)}
                   className="w-full bg-bg border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-lime"
-                />
+                >
+                  <option value="">— escolha —</option>
+                  {(origens ?? []).map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.nome}
+                    </option>
+                  ))}
+                </select>
               </Field>
             ) : (
-              <Field label={isBucket ? "Começa em" : "Início"}>
-                <input
-                  type="date"
-                  value={dataInicio}
-                  onChange={(e) => setDataInicio(e.target.value)}
+              <Field label="Conta">
+                <select
+                  value={contaId}
+                  onChange={(e) => setContaId(e.target.value)}
                   className="w-full bg-bg border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-lime"
-                />
+                >
+                  {CONTAS_ATIVAS.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.nome} ({c.apelido})
+                    </option>
+                  ))}
+                </select>
               </Field>
             )}
           </div>
+
+          {isReceita ? (
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Data da venda">
+                <input
+                  type="date"
+                  value={dataVenda}
+                  onChange={(e) => setDataVenda(e.target.value)}
+                  className="w-full bg-bg border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-lime"
+                />
+              </Field>
+              <Field label="Status">
+                <select
+                  value={statusReceita}
+                  onChange={(e) => setStatusReceita(e.target.value)}
+                  className="w-full bg-bg border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-lime"
+                >
+                  <option value="previsto">A receber</option>
+                  <option value="recebido">Já em caixa</option>
+                </select>
+              </Field>
+              {statusReceita === "previsto" && (
+                <Field label="Data prevista do pagamento">
+                  <input
+                    type="date"
+                    value={dataPrevista}
+                    onChange={(e) => setDataPrevista(e.target.value)}
+                    className="w-full bg-bg border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-lime"
+                  />
+                </Field>
+              )}
+              {statusReceita === "recebido" && (
+                <Field label="Data do recebimento">
+                  <input
+                    type="date"
+                    value={dataRecebimento}
+                    onChange={(e) => setDataRecebimento(e.target.value)}
+                    className="w-full bg-bg border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-lime"
+                  />
+                </Field>
+              )}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Categoria">
+                <select
+                  value={categoriaId}
+                  onChange={(e) => setCategoriaId(e.target.value)}
+                  className="w-full bg-bg border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-lime"
+                >
+                  <option value="">— sem categoria —</option>
+                  {categorias.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.nome}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+
+              {isTrans ? (
+                <Field label="Data">
+                  <input
+                    type="date"
+                    value={dataCompetencia}
+                    onChange={(e) => setDataCompetencia(e.target.value)}
+                    className="w-full bg-bg border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-lime"
+                  />
+                </Field>
+              ) : (
+                <Field label={isBucket ? "Começa em" : "Início"}>
+                  <input
+                    type="date"
+                    value={dataInicio}
+                    onChange={(e) => setDataInicio(e.target.value)}
+                    className="w-full bg-bg border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-lime"
+                  />
+                </Field>
+              )}
+            </div>
+          )}
 
           <Field label="Projeto">
             <div className="flex flex-wrap gap-2">

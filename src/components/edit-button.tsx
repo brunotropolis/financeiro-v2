@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Pencil } from "lucide-react";
-import { EditEntryModal, type EditableEntry } from "@/components/edit-entry-modal";
+import { EditEntryModal, type EditableEntry, type OrigemOpt } from "@/components/edit-entry-modal";
 
 type Categoria = { id: string; nome: string };
 type Projeto = { id: string; nome: string; cor: string | null };
@@ -11,11 +11,13 @@ export function EditButton({
   entry,
   categorias,
   projetos,
+  origens,
   compact,
 }: {
   entry: EditableEntry;
   categorias: Categoria[];
   projetos: Projeto[];
+  origens?: OrigemOpt[];
   compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -38,6 +40,7 @@ export function EditButton({
           entry={entry}
           categorias={categorias}
           projetos={projetos}
+          origens={origens}
           onClose={() => setOpen(false)}
         />
       )}

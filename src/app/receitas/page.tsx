@@ -4,7 +4,8 @@ import { Topbar } from "@/components/layout/topbar";
 import { Card } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/server";
 import { getSaldoGreenn } from "@/lib/queries";
-import { getProjetos } from "@/lib/catalog";
+import { getProjetos, getOrigens } from "@/lib/catalog";
+import { EditButton } from "@/components/edit-button";
 import { formatBRL, formatDate } from "@/lib/formatters";
 import { GreennLine } from "./greenn-line";
 import { Sparkles, PlusCircle } from "lucide-react";
@@ -21,6 +22,7 @@ type Receita = {
   data_recebimento: string | null;
   status: string;
   projeto_id: string | null;
+  origem_id: string | null;
 };
 
 export default async function ReceitasPage() {
@@ -29,14 +31,18 @@ export default async function ReceitasPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const [greenn, projetos] = await Promise.all([getSaldoGreenn(), getProjetos()]);
+  const [greenn, projetos, origens] = await Promise.all([
+    getSaldoGreenn(),
+    getProjetos(),
+    getOrigens(),
+  ]);
   const projMap = new Map(projetos.map((p) => [p.id, p]));
 
   // Últimas 60 receitas (cobre vários meses)
   const recRes = await supabase
     .from("receitas_brutas")
     .select(
-      "id, produto_nome, origem, valor_liquido, data_venda, data_prevista_pagamento, data_recebimento, status, projeto_id"
+      "id, produto_nome, origem, valor_liquido, data_venda, data_prevista_pagamento, data_recebimento, status, projeto_id, origem_id"
     )
     .order("data_venda", { ascending: false })
     .limit(60);
@@ -100,7 +106,8 @@ export default async function ReceitasPage() {
               <div className="col-span-2">Data venda</div>
               <div className="col-span-2 text-right">Faturamento</div>
               <div className="col-span-2 text-right">Recebido</div>
-              <div className="col-span-3">Status</div>
+              <div className="col-span-2">Status</div>
+              <div className="col-span-1 text-right">Ações</div>
             </div>
 
             <GreennLine
@@ -154,7 +161,7 @@ export default async function ReceitasPage() {
                       <span className="text-ink-dim">—</span>
                     )}
                   </div>
-                  <div className="col-span-3">
+                  <div className="col-span-2">
                     <span
                       className={`text-[10px] uppercase tracking-wider rounded px-1.5 py-0.5 ${
                         r.status === "recebido"
@@ -165,10 +172,32 @@ export default async function ReceitasPage() {
                       {r.status}
                     </span>
                     {r.data_recebimento && (
-                      <span className="text-[10px] text-ink-dim ml-2">
+                      <span className="block text-[10px] text-ink-dim mt-0.5">
                         em {formatDate(r.data_recebimento)}
                       </span>
                     )}
+                  </div>
+                  <div className="col-span-1 text-right">
+                    <EditButton
+                      compact
+                      entry={{
+                        kind: "receita",
+                        id: r.id,
+                        descricao: r.produto_nome ?? "",
+                        valor: Number(r.valor_liquido),
+                        conta_id: null,
+                        categoria_id: null,
+                        projeto_id: r.projeto_id,
+                        origem_id: r.origem_id,
+                        data_venda: r.data_venda,
+                        data_prevista_pagamento: r.data_prevista_pagamento,
+                        data_recebimento: r.data_recebimento,
+                        status: r.status,
+                      }}
+                      categorias={[]}
+                      projetos={projetos}
+                      origens={origens.map((o) => ({ id: o.id, nome: o.nome }))}
+                    />
                   </div>
                 </div>
                 );
