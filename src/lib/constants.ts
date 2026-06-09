@@ -24,6 +24,13 @@ export const CONTAS_ATIVAS = [
     cor: "#60a5fa",
     entidade_id: "83ecce91-47ae-479b-bb90-7baa711fb339",
   },
+  {
+    id: "02cb3607-0b95-42ca-b29c-75774d8511a9",
+    nome: "Cartão Unicred",
+    apelido: "Manual RN · cartão",
+    cor: "#f97316", // laranja — diferencia visualmente que é cartão (dívida, não saldo)
+    entidade_id: "f587e50f-eb39-45e1-b748-fb191a8bcb3f",
+  },
 ] as const;
 
 export const CONTAS_ATIVAS_IDS = CONTAS_ATIVAS.map((c) => c.id);
