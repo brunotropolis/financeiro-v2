@@ -23,7 +23,7 @@ const NAV = [
     { href: "/lancamentos", label: "Lançamentos", icon: List },
   ]},
   { section: "AJUSTES", items: [
-    { href: "/configuracoes", label: "Configurações", icon: Settings },
+    { href: "/configuracoes/greenn", label: "Greenn auto-sync", icon: Settings },
     { href: "/ajuda", label: "Ajuda", icon: HelpCircle },
   ]},
 ];
