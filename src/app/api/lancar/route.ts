@@ -25,6 +25,7 @@ type Payload = {
   data_venda?: string;
   data_recebimento?: string;
   data_prevista_pagamento?: string;
+  bucket_id?: string | null;
 };
 
 function addMonths(isoDate: string, n: number): string {
@@ -87,6 +88,7 @@ export async function POST(request: NextRequest) {
           categoria_id: body.categoria_id ?? null,
           conta_id,
           projeto_id: body.projeto_id ?? null,
+          recorrencia_id: body.bucket_id ?? null,
           parcelado: false,
           status: body.status ?? "prevista",
           origem: "painel",

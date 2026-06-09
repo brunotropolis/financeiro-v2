@@ -1,7 +1,7 @@
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import { createClient } from "@/lib/supabase/server";
-import { getCategorias, getOrigens, getProjetos } from "@/lib/catalog";
+import { getCategorias, getOrigens, getProjetos, getBuckets } from "@/lib/catalog";
 import { LancarForm } from "./lancar-form";
 
 export const dynamic = "force-dynamic";
@@ -12,12 +12,14 @@ export default async function LancarPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const [categoriasDespesa, categoriasReceita, origens, projetos] = await Promise.all([
-    getCategorias("despesa"),
-    getCategorias("receita"),
-    getOrigens(),
-    getProjetos(),
-  ]);
+  const [categoriasDespesa, categoriasReceita, origens, projetos, buckets] =
+    await Promise.all([
+      getCategorias("despesa"),
+      getCategorias("receita"),
+      getOrigens(),
+      getProjetos(),
+      getBuckets(),
+    ]);
 
   return (
     <div className="min-h-screen flex bg-bg">
@@ -39,6 +41,7 @@ export default async function LancarPage() {
             categoriasReceita={categoriasReceita}
             origens={origens}
             projetos={projetos}
+            buckets={buckets}
           />
         </div>
       </main>

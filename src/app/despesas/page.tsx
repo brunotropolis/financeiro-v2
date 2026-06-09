@@ -698,34 +698,33 @@ async function BucketsTab({
     .filter((r) => r.ativo)
     .filter((r) => ocorrenciasBucketNoMes(r, inicio) > 0);
 
-  // Despesas avulsas no mês — usadas pra calcular "utilizado" por categoria
+  // Transações vinculadas explicitamente a buckets (recorrencia_id = bucket.id)
   const txRes = await supabase
     .from("transacoes")
-    .select("categoria_id, valor")
+    .select("recorrencia_id, valor")
     .in("conta_id", [...CONTAS_ATIVAS_IDS])
     .eq("tipo", "despesa")
-    .is("recorrencia_id", null)
+    .not("recorrencia_id", "is", null)
     .gte("data_competencia", inicio)
     .lte("data_competencia", fim);
   const txs = (txRes.data ?? []) as Array<{
-    categoria_id: string | null;
+    recorrencia_id: string;
     valor: number | string;
   }>;
 
-  // Map categoria_id → total gasto avulso no mês
-  const usoPorCategoria = new Map<string, number>();
+  // Map bucket_id → total gasto
+  const usoPorBucket = new Map<string, number>();
   for (const t of txs) {
-    if (!t.categoria_id) continue;
-    usoPorCategoria.set(
-      t.categoria_id,
-      (usoPorCategoria.get(t.categoria_id) ?? 0) + Number(t.valor)
+    usoPorBucket.set(
+      t.recorrencia_id,
+      (usoPorBucket.get(t.recorrencia_id) ?? 0) + Number(t.valor)
     );
   }
 
   // Stats agregados
   const totalTeto = buckets.reduce((s, b) => s + Number(b.valor_padrao), 0);
   const totalUtilizado = buckets.reduce(
-    (s, b) => s + (b.categoria_id ? usoPorCategoria.get(b.categoria_id) ?? 0 : 0),
+    (s, b) => s + (usoPorBucket.get(b.id) ?? 0),
     0
   );
   const totalRestante = Math.max(0, totalTeto - totalUtilizado);
@@ -777,7 +776,7 @@ async function BucketsTab({
             const cat = b.categoria_id ? catMap.get(b.categoria_id) : null;
             const proj = b.projeto_id ? projMap.get(b.projeto_id) : null;
             const teto = Number(b.valor_padrao);
-            const usado = b.categoria_id ? usoPorCategoria.get(b.categoria_id) ?? 0 : 0;
+            const usado = usoPorBucket.get(b.id) ?? 0;
             const restante = Math.max(0, teto - usado);
             const pct = teto > 0 ? Math.min(150, (usado / teto) * 100) : 0;
             const barColor =
@@ -969,23 +968,25 @@ async function GeralTab({
     data_inicio: string | null;
   }>).filter((b) => ocorrenciasBucketNoMes(b, inicio) > 0);
 
-  // Transações por categoria pra cobrir buckets (só avulsas — não recorrencias)
-  const txCatRes = await supabase
+  // Transações vinculadas a buckets (recorrencia_id = bucket.id)
+  const txBucketRes = await supabase
     .from("transacoes")
-    .select("categoria_id, valor")
+    .select("recorrencia_id, valor")
     .in("conta_id", [...CONTAS_ATIVAS_IDS])
     .eq("tipo", "despesa")
-    .is("recorrencia_id", null)
+    .not("recorrencia_id", "is", null)
     .gte("data_competencia", inicio)
     .lte("data_competencia", fim);
-  const usoPorCat = new Map<string, number>();
-  for (const t of (txCatRes.data ?? []) as Array<{ categoria_id: string | null; valor: number | string }>) {
-    if (!t.categoria_id) continue;
-    usoPorCat.set(t.categoria_id, (usoPorCat.get(t.categoria_id) ?? 0) + Number(t.valor));
+  const usoPorBucketGeral = new Map<string, number>();
+  for (const t of (txBucketRes.data ?? []) as Array<{ recorrencia_id: string; valor: number | string }>) {
+    usoPorBucketGeral.set(
+      t.recorrencia_id,
+      (usoPorBucketGeral.get(t.recorrencia_id) ?? 0) + Number(t.valor)
+    );
   }
   const bucketsTeto = buckets.reduce((s, b) => s + Number(b.valor_padrao), 0);
   const bucketsUsado = buckets.reduce(
-    (s, b) => s + (b.categoria_id ? usoPorCat.get(b.categoria_id) ?? 0 : 0),
+    (s, b) => s + (usoPorBucketGeral.get(b.id) ?? 0),
     0
   );
 
@@ -1045,7 +1046,7 @@ async function GeralTab({
           teto={bucketsTeto}
           usado={bucketsUsado}
           catMap={catMap}
-          usoPorCat={usoPorCat}
+          usoPorBucket={usoPorBucketGeral}
         />
       </div>
     </>
@@ -1100,7 +1101,7 @@ function BucketBreakdownRow({
   teto,
   usado,
   catMap,
-  usoPorCat,
+  usoPorBucket,
 }: {
   buckets: Array<{
     id: string;
@@ -1111,7 +1112,7 @@ function BucketBreakdownRow({
   teto: number;
   usado: number;
   catMap: Map<string, { id: string; nome: string; cor_hex: string | null }>;
-  usoPorCat: Map<string, number>;
+  usoPorBucket: Map<string, number>;
 }) {
   const pct = teto > 0 ? Math.min(150, (usado / teto) * 100) : 0;
   const barColor = pct > 100 ? "bg-negative" : pct > 70 ? "bg-amber-400" : "bg-lime";
@@ -1151,7 +1152,7 @@ function BucketBreakdownRow({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
             {buckets.map((b) => {
               const cat = b.categoria_id ? catMap.get(b.categoria_id) : null;
-              const u = b.categoria_id ? usoPorCat.get(b.categoria_id) ?? 0 : 0;
+              const u = usoPorBucket.get(b.id) ?? 0;
               const t = Number(b.valor_padrao);
               const p = t > 0 ? Math.min(150, (u / t) * 100) : 0;
               return (

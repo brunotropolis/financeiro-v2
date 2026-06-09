@@ -50,6 +50,41 @@ export async function getProjetos(): Promise<ProjetoItem[]> {
   );
 }
 
+export type BucketItem = {
+  id: string;
+  nome: string;
+  categoria_id: string | null;
+  conta_id: string | null;
+  valor_padrao: number;
+  frequencia: string;
+};
+
+export async function getBuckets(): Promise<BucketItem[]> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("recorrencias")
+    .select("id, nome, categoria_id, conta_id, valor_padrao, frequencia, tipo_valor, ativo")
+    .eq("tipo", "despesa")
+    .eq("tipo_valor", "bucket")
+    .eq("ativo", true)
+    .order("nome");
+  return ((data ?? []) as Array<{
+    id: string;
+    nome: string;
+    categoria_id: string | null;
+    conta_id: string | null;
+    valor_padrao: number | string;
+    frequencia: string;
+  }>).map((r) => ({
+    id: r.id,
+    nome: r.nome,
+    categoria_id: r.categoria_id,
+    conta_id: r.conta_id,
+    valor_padrao: Number(r.valor_padrao),
+    frequencia: r.frequencia,
+  }));
+}
+
 export async function getOrigens(): Promise<OrigemItem[]> {
   const supabase = await createClient();
   const { data } = await supabase
