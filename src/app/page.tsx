@@ -3,9 +3,8 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import { Card } from "@/components/ui/card";
 import { MesFilter } from "@/components/mes-filter";
-import { projetar6Meses } from "@/lib/projecao";
 import { getMetaAdsMes } from "@/lib/meta-ads";
-import { CONTAS_ATIVAS, CONTAS_ATIVAS_IDS } from "@/lib/constants";
+import { CONTAS_ATIVAS_IDS } from "@/lib/constants";
 import { formatBRL, formatBRLCompact } from "@/lib/formatters";
 import { cn } from "@/lib/utils";
 import {
@@ -206,9 +205,6 @@ export default async function DashboardPage({
   // Resultado = entradas - despesas reais
   const resultadoMes = entradasMes - despesasReais;
 
-  // 5. Projeção 6 meses (continua igual)
-  const projecao = await projetar6Meses();
-
   return (
     <div className="min-h-screen flex bg-bg">
       <Sidebar userEmail={user?.email} />
@@ -300,91 +296,6 @@ export default async function DashboardPage({
             </Card>
           </div>
 
-          {/* Projeção 6 meses */}
-          <Card className="!p-0 overflow-hidden">
-            <div className="px-5 pt-5 pb-3">
-              <h2 className="text-sm font-semibold">Projeção de caixa — 6 meses</h2>
-              <p className="text-xs text-ink-dim mt-0.5">
-                Saldo no fim de cada mês = saldo anterior − despesas previstas + receitas a receber
-              </p>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[700px]">
-                <thead>
-                  <tr className="border-y border-line/60 bg-surface/50 text-[11px] text-ink-dim uppercase tracking-wider">
-                    <th className="text-left px-5 py-2 font-medium">Conta</th>
-                    {projecao.map((m) => (
-                      <th
-                        key={m.mesIso}
-                        className="text-right px-3 py-2 font-medium whitespace-nowrap"
-                      >
-                        {m.label}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {CONTAS_ATIVAS.map((c) => (
-                    <tr key={c.id} className="border-b border-line/40 last:border-0">
-                      <td className="px-5 py-3">
-                        <span className="inline-flex items-center gap-2 text-sm">
-                          <span
-                            className="h-2 w-2 rounded-full"
-                            style={{ background: c.cor }}
-                          />
-                          {c.nome}
-                        </span>
-                      </td>
-                      {projecao.map((m) => {
-                        const v = m.porConta[c.id] ?? 0;
-                        return (
-                          <td
-                            key={m.mesIso}
-                            className={cn(
-                              "px-3 py-3 text-right whitespace-nowrap font-medium",
-                              v < 0 ? "text-negative" : v === 0 ? "text-ink-dim" : "text-ink"
-                            )}
-                          >
-                            {formatBRLCompact(v)}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                  <tr className="bg-lime/[0.05]">
-                    <td className="px-5 py-3 text-sm font-semibold text-lime">
-                      Total (com receitas)
-                    </td>
-                    {projecao.map((m) => (
-                      <td
-                        key={m.mesIso}
-                        className={cn(
-                          "px-3 py-3 text-right whitespace-nowrap font-bold",
-                          m.totalSaldo < 0 ? "text-negative" : "text-lime"
-                        )}
-                      >
-                        {formatBRLCompact(m.totalSaldo)}
-                      </td>
-                    ))}
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <div className="px-5 py-3 border-t border-line/60 grid grid-cols-2 gap-4 text-xs text-ink-soft">
-              <div>
-                <span className="text-ink-dim">Despesas previstas (6m):</span>{" "}
-                <span className="text-negative font-medium">
-                  {formatBRL(projecao.reduce((s, m) => s + m.totalDespesas, 0))}
-                </span>
-              </div>
-              <div className="text-right">
-                <span className="text-ink-dim">Receitas a receber (6m):</span>{" "}
-                <span className="text-positive font-medium">
-                  {formatBRL(projecao.reduce((s, m) => s + m.totalReceitas, 0))}
-                </span>
-              </div>
-            </div>
-          </Card>
         </div>
       </main>
     </div>
