@@ -9,7 +9,7 @@ import { Repeat, Layers, PiggyBank, Power, ArrowDownToLine } from "lucide-react"
 import { RecorrenteToggle } from "@/app/recorrentes/recorrente-toggle";
 import { EditButton } from "@/components/edit-button";
 import { DespesasTabs } from "./tabs";
-import { MesFilter } from "./mes-filter";
+import { MesFilter } from "@/components/mes-filter";
 
 export const dynamic = "force-dynamic";
 
@@ -118,7 +118,7 @@ export default async function DespesasPage({
                 Avulsas e recorrentes — referência: <strong>{mesLabel}</strong>
               </p>
             </div>
-            <MesFilter mes={mes} tab={tab} />
+            <MesFilter mes={mes} basePath={`/despesas?tab=${tab}`} />
           </div>
 
           <DespesasTabs current={tab} mes={mes} />
