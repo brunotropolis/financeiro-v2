@@ -45,41 +45,44 @@ Sidebar com user chip + busca ⌘K + nome "Controle Financeiro | brunotropolis" 
 
 ## IDs hardcoded (`src/lib/constants.ts`)
 
-3 contas que o painel acompanha (resto fica fora):
+**4 contas** que o painel acompanha (adicionado Cartão Unicred em 09/jun como 4ª opção, cor laranja `#f97316` pra diferenciar dívida de saldo):
 
-| Conta | ID | Entidade |
-|---|---|---|
-| Manual RN — Unicred | `d6873ac0-52e3-4647-af2b-cdd1fa32e787` | Manual do Recém-Nascido |
-| Dream Baby — Unicred | `e4598c53-6282-4b62-8551-9b228265230d` | Dream Baby |
-| MRN Serviços — Conta Simples | `2bf03aa5-f7cc-466c-9a3f-a85bcb9d7e88` | MRN Serviços Digitais |
+| Conta | ID | Entidade | Cor |
+|---|---|---|---|
+| Manual RN — Unicred | `d6873ac0-52e3-4647-af2b-cdd1fa32e787` | Manual do Recém-Nascido | lime |
+| Dream Baby — Unicred | `e4598c53-6282-4b62-8551-9b228265230d` | Dream Baby | verde |
+| MRN Serviços — Conta Simples | `2bf03aa5-f7cc-466c-9a3f-a85bcb9d7e88` | MRN Serviços Digitais | azul |
+| **Cartão Unicred** | `02cb3607-0b95-42ca-b29c-75774d8511a9` | Manual do Recém-Nascido | **laranja** |
+
+⚠️ Cartão Unicred é tipo `corrente` no banco (constraint NOT NULL em `banco`/`tipo` — tipos permitidos: corrente/digital/prepaga). Funciona como conta no painel mas semanticamente é dívida.
 
 ## Tabelas Supabase usadas (subset do v1)
 
-- `contas_bancarias` — só as 3 ativas
-- `categorias` — 24 (16 despesa + 8 receita)
-- `projetos` — 4 (Pessoal, Manual do Recém-Nascido, Brunotropolis, Ofertas Maternas) ordem definida 22-Mai
-- `origens_receita` — 11 (Greenn, Magalu, Amazon, etc)
+- `contas_bancarias` — as 4 ativas
+- `categorias` — 25 (16 despesa + **9 receita**, adicionado "Recebimento Greenn" em 09/jun)
+- `projetos` — 4 (Pessoal, Manual do Recém-Nascido, Brunotropolis, Ofertas Maternas)
+- `origens_receita` — **12** (adicionado "Recebimento Greenn" slug `recebimento_greenn` em 09/jun)
 - `recorrencias` — fixas + buckets (`tipo_valor` decide). Bucket = `tipo_valor='bucket'`
 - `transacoes` — despesas avulsas + parceladas + transações vinculadas a bucket (via `recorrencia_id` apontando pro bucket)
 - `receitas_brutas` — receitas (Greenn automático via webhook do v1 + manual)
 - `greenn_saldos` — snapshots (disponivel/pendente/antecipavel)
+- **`faturamento_snapshots`** (NEW 09/jun) — snapshot mensal por fonte pra congelar histórico. Schema: `(id, mes_referencia 'YYYY-MM', fonte 'greenn_meta'|'manual:<slug>', fonte_label, valor_bruto, valor_liquido, snap_em, snap_por, metadata jsonb)` + unique(mes_referencia, fonte).
 
 Resto do v1 ignorado: `faturas_cartao`, `orcamentos`, `audit_log` (existe, não usado), `movimentacoes_bancarias`, `snapshots`, etc.
 
 ## Telas e rotas
 
 ### `/` Dashboard
-- 4 KPIs (Saldo total, Faturamento mês, Despesas mês, Resultado)
-- 3 cards de conta (Manual RN / Dream Baby / Conta Simples) + saldo atual
-- Card lime "Saldo Greenn" — em caixa, a receber, antecipável + botão "Atualizar saldo"
-- Próximos vencimentos (placeholder)
-- **Tabela "Projeção de caixa — 6 meses":** linhas = 3 contas + Total, colunas = mês atual + 5 futuros
-  - Cálculo: `saldo_anterior − despesas_previstas + receitas_a_receber` por mês
-  - Considera recorrências (com frequência: mensal/semanal/quinzenal/bimestral)
-  - Receitas usam `data_prevista_pagamento`
+Filtro de mês lime (`MesFilter`) no canto direito + 4 KPIs principais:
+- **Entradas do mês** (verde) — receitas a receber + recebidas no mês + `greenn.disponivel + greenn.antecipavel` (cai em até 24h se solicitar)
+- **Despesas previstas** (âmbar) — avulsas + recorrentes + tetos buckets + Meta Ads
+- **Despesas reais** (vermelho) — lançadas (avulsas + recorrentes + bucket usado + Meta Ads)
+- **Resultado do mês** = Entradas − Despesas reais
+
+Card "Próximos vencimentos" (placeholder pra sprint futura). Sem cards de conta, sem saldo total, sem Greenn (movido pra `/receitas`), sem tabela de projeção 6 meses (ocultada — código vivo em `lib/projecao.ts`).
 
 ### `/lancar` — form universal
-5 tipos:
+5 tipos (suporta `?tipo=receita_avulsa` na URL pra pré-selecionar):
 1. **Despesa avulsa** → `transacoes` (status: prevista/paga)
 2. **Despesa recorrente** → `recorrencias` (frequencia, dia_vencimento, tipo_valor=fixo)
 3. **Despesa parcelada** → N inserts em `transacoes` com `parcelado=true`, `parcela_atual/total`
@@ -96,56 +99,53 @@ Todos os tipos têm seletor **Projeto** (central de custo, 4 botões coloridos) 
 
 ### `/despesas` — 4 tabs
 
-Filtro de mês compartilhado (botão lime destacado com ‹ › e date picker), URL param `?m=YYYY-MM`.
+Filtro de mês compartilhado (`MesFilter` lime), URL param `?m=YYYY-MM`.
 
 1. **Geral** (default) — visão consolidada
-   - 3 cards grandes: Total / Já pago / Previsto
-   - 3 cards clicáveis (Avulsas, Recorrentes, Buckets) que levam pra tab
-   - Mini-lista de buckets mostrando nome cadastrado + utilizado/teto
-   - **Total inclui:** avulsas + recorrentes + tetos buckets (cheios)
-   - Decisão: bucket teto entra cheio no previsto (sem subtrair utilizado)
+   - **4 cards** grandes:
+     - **Total fixo do mês** — recorrências fixas no mês
+     - **Previsto fixo + buckets** — fixas a pagar + tetos cheios dos buckets
+     - **Já pago + Meta Ads** — pago (verde) com nota do gasto Meta no mês
+     - **Total do mês (com Meta)** — tudo somado, incluindo Meta Ads
+   - **Linha Meta Ads** acima de Avulsas no breakdown (puxado do dashboard API n8n, 100% pago, ROAS Real exibido)
+   - 3 cards clicáveis (Avulsas, Recorrentes, Buckets) levam pra tab
+   - Mini-lista de buckets mostra **nome cadastrado** (não categoria) + utilizado/teto
 
 2. **Avulsas** — transações tipo despesa sem `recorrencia_id` e sem `parcelado`
-   - Tabela com Data, Descrição, Conta, Categoria, Projeto, Status, Valor, Ações
-   - Stats: Lançamentos / Já pago / Previsto
-
 3. **Recorrentes** — fixas + parceladas (NÃO inclui buckets — foram movidos pra tab própria)
-   - Stats: Lançamentos / Já pago / Previsto
-   - Seção Fixas (tabela) — só as ativas no mês (filtro de ocorrências)
-   - Seção Parceladas (cards) — grupos de parcelas com vencimento no mês
-   - Cada linha tem botão editar + toggle pausar
-
-4. **Buckets** — só buckets (`tipo_valor='bucket'`)
-   - 4 cards stats: Buckets ativos / Teto total / Utilizado / Restante
-   - Cor do "Utilizado" muda conforme % do teto: verde <70%, amarelo 70-100%, vermelho >100%
-   - Cards 2 colunas cada bucket com:
-     - Nome + categoria + projeto + freq
-     - Barra de progresso colorida
-     - Utilizado / Teto, Resta (ou "Estourou")
-     - Botão editar
-   - **Utilizado** = soma de transações com `recorrencia_id = bucket.id` (NÃO mais por categoria)
+4. **Buckets** — só buckets. Cada card tem botão **"👁️ Ver N lançamentos"** que abre modal com as transações vinculadas (edit/delete via EditButton).
 
 ### `/receitas` — 2 tabs
 
+Filtro de mês lime. Ordem das tabs: **Caixa → Faturamento** (Caixa default).
+
 1. **Caixa** (default) — fluxo de caixa do mês
-   - Filtra por `data_recebimento` (já caiu) **OR** `data_prevista_pagamento` (vai cair)
-   - 4 cards: Já entrou / Vai entrar / Total / Greenn na plataforma
-   - Tabela mostra "Cai em" (data certa baseada em status) + "Situação" (verde se recebido, âmbar "vai entrar" se previsto)
+   - Filtra por `data_recebimento` no mês **OR** `data_prevista_pagamento` no mês
+   - 4 cards: Já entrou / **Vai entrar** (inclui Greenn rápido) / Total / Greenn na plataforma
+   - Tabela mostra "Cai em" + "Situação" (verde se recebido, âmbar "vai entrar" se previsto)
 
 2. **Faturamento** — competência (data_venda no mês)
    - 3 cards: Faturamento do mês / Já em caixa / A receber
-   - Linha fixa Saldo Greenn no topo da tabela (só nessa tab)
-   - Tabela com receitas filtradas por data_venda
+   - **SEM linha Greenn** (removida em 09/jun — só dados manuais lançados)
+   - Botão "Nova receita" leva pra `/lancar?tipo=receita_avulsa` (já pré-selecionado)
 
 Botão ✏️ pra editar receitas no canto direito.
 
-### `/configuracoes/greenn` — auto-sync via bookmarklet
+### `/historico` (NEW 09/jun) — Faturamento mensal
+Aba na sidebar entre Receitas e Lançamentos. Janela de **4 meses por vez**, navegável (‹ 4 antes | até XXX | 4 depois ›).
 
+- **4 cards stats** da janela: Total / Greenn-Meta / Manual-Afiliados / Média mensal
+- **Tabela cruzada:** linhas = origens (Greenn via Meta + cada origem manual), colunas = 4 meses + Total
+- **Botão "fechar"** em cada coluna → POST `/api/faturamento/fechar-mes` → grava snapshot. Mês fechado mostra **🔒 cadeado lime** ao lado do label
+- Controle a partir de **Abr/2026** — meses anteriores zerados
+- Prefere snapshot se existir; senão calcula ao vivo (Meta API + receitas_brutas)
+- Cron diário 23h BRT fecha automaticamente no último dia do mês
+
+### `/configuracoes/greenn` — auto-sync via bookmarklet
 Setup do bookmarklet pra atualizar Saldo Greenn em 1 clique.
 
 ### `/lancamentos` — histórico geral
-
-Lista todas transações (despesas e receitas) com filtros período/conta/tipo. Tabela com edit. (Da Sprint 2, mantida.)
+Lista todas transações com filtros período/conta/tipo. Tabela com edit. (Da Sprint 2.)
 
 ## Modal de edição universal (`src/components/edit-entry-modal.tsx`)
 
@@ -164,13 +164,14 @@ Botão **Excluir** com confirmação. Edição via PATCH em `/api/{transacoes|re
 
 | Endpoint | Função |
 |---|---|
-| `POST /api/lancar` | Cria transação/recorrência/bucket/receita baseado no `tipo` |
+| `POST /api/lancar` | Cria transação/recorrência/bucket/receita baseado no `tipo`. Aceita `bucket_id` opcional pra avulsa vinculada |
 | `PATCH/DELETE /api/transacoes/[id]` | Editar/excluir despesas avulsas e parcelas |
 | `PATCH/DELETE /api/recorrentes/[id]` | Editar/excluir recorrências e buckets (PATCH também faz toggle ativo) |
 | `PATCH/DELETE /api/receitas/[id]` | Editar/excluir receita_bruta |
 | `POST /api/greenn/parse-saldo` | Claude Vision parse de print de carteira Greenn (fallback) |
 | `POST /api/greenn/manual` | Entrada manual dos 3 valores Greenn (sem IA) |
 | `POST /api/greenn/sync` | Bookmarklet POSTa Bearer token Greenn → servidor chama Greenn API → snapshot |
+| `POST /api/faturamento/fechar-mes` (NEW 09/jun) | Snapshot do faturamento do mês. Body `{mes_referencia: 'YYYY-MM'}`. Auth via sessão Supabase OU header `X-Cron-Secret` (env `CRON_SECRET`). Idempotente (UPSERT em `faturamento_snapshots`). |
 
 ## Greenn auto-sync — caminho descoberto
 
@@ -228,6 +229,11 @@ Mostra na tabela por conta + total (com receitas).
 | **3.8** | ✅ | Editar/excluir tudo + filtro mês maior lime |
 | **3.9** | ✅ | Tab Buckets separada + tab Geral + Caixa default em Receitas |
 | **3.10** | ✅ | Vincular avulsa a bucket (sem double-count) + nome cadastrado em listas |
+| **3.11** | ✅ | Cartão Unicred como 4ª conta + modal "Ver lançamentos" no bucket |
+| **3.12** | ✅ | Dashboard refatorado: sem cards de conta, sem saldo total. 4 KPIs novos (Entradas/Despesas previstas/reais/Resultado). Filtro mês lime |
+| **3.13** | ✅ | Meta Ads auto na Geral de Despesas + categoria/origem "Recebimento Greenn" + Greenn fora do dashboard. 4 boxes novos (Total fixo / Previsto fixo+buckets / Já pago+Meta / Total c/ Meta) |
+| **3.14** | ✅ | `/historico` (4 meses navegáveis) com Greenn via Meta + manual por origem. Tira GreennLine de Faturamento |
+| **3.15** | ✅ | Snapshot `faturamento_snapshots` (UPSERT idempotente) + botão "fechar mês" no histórico + cron n8n diário 23h BRT (fecha auto no último dia). Fix bucket `data_inicio` (usar mesFim, não mesInicio) |
 | **4** | ⬜ | Polish baseado em uso real + derrubar v1 |
 
 ## Pendências (próxima sessão)
@@ -248,6 +254,8 @@ Custo: ~50 linhas opção 1 + ~30 linhas opção 2. Sem migration.
 - Cadastros sub-restantes (Bruno cadastrando aos poucos)
 - Polish do que aparecer no uso
 - Derrubar `financeiro.brunotropolis.com.br` (v1)
+- Lançamento de saques Greenn como receita avulsa (origem `recebimento_greenn`) — Bruno faz manualmente quando saca
+- "Pagamento de fatura cartão" — cada mês Bruno lança 1 transação na conta Manual RN (corrente) com valor da fatura pra zerar a "dívida" simbólica do Cartão Unicred. Sem automação por ora.
 
 ## Bugs corrigidos na jornada
 
@@ -263,15 +271,34 @@ Custo: ~50 linhas opção 1 + ~30 linhas opção 2. Sem migration.
 | 8 | Greenn `/oauth/token` bloqueia datacenter IP | Bookmarklet no browser Bruno (residencial) + servidor só chama API com token já-emitido |
 | 9 | Chrome strip `javascript:` em drag-to-bookmark | Instruções na página pra criar manual via "Adicionar página…" |
 | 10 | Double-count bucket × avulsa | Vincular avulsa via `recorrencia_id = bucket.id`; tab Buckets usa esse vínculo em vez de categoria |
+| 11 | `contas_bancarias` aceita só tipos `corrente/digital/prepaga` + `banco` NOT NULL | Cartão Unicred salvo com tipo=`corrente`, banco=`Unicred`, cor laranja só pro visual |
+| 12 | Bucket com `data_inicio` no meio do mês não aparecia | Função `ocorrenciasNoMes` comparava com `mesInicio` (primeiro dia). Trocar pra `mesFim` (último dia). Sanepar começava 05/jun, não entrava em junho — agora entra |
+
+## Tabelas de auth/secrets
+
+- `GREENN_SYNC_SECRET` — secret do bookmarklet Greenn (env var)
+- `ANTHROPIC_API_KEY` — Claude Vision pra paste de print Greenn
+- `CRON_SECRET` (NEW 09/jun) — secret pro workflow n8n disparar fechamento mensal sem precisar de sessão Supabase. Valor: `fc4f93b08a7e6a553338e786d89c1aa3f2d8165b599f5e4b` (em EasyPanel + `.env.local`)
+
+## Cron n8n: fechamento mensal
+
+Workflow `nUAkT6e2jLw6Sczd` — **FINANCEIRO V2 | Cron Fechar Mês**:
+- Schedule diário 02:00 UTC = 23:00 BRT
+- Code node calcula se hoje é último dia do mês BRT
+- Se sim → HTTP POST `/api/faturamento/fechar-mes` com `X-Cron-Secret`
+- Idempotente — pode re-rodar; UPSERT em `faturamento_snapshots`
+- Script: `scripts/build_cron_fechar_mes.py` (reusable)
 
 ## Decisões de arquitetura
 
-- **3 contas hardcoded** porque Bruno só usa essas. Resto fica fora do v2.
+- **4 contas hardcoded** porque Bruno só usa essas. Resto fica fora do v2.
 - **Tabela de Projetos** = central de custo (Pessoal, Manual RN, Brunotropolis, Ofertas Maternas) — ortogonal a Entidade (PF/PJ fiscal).
 - **Bucket = tipo de recorrência**, não tabela nova. Reusa `recorrencias.tipo_valor='bucket'`.
 - **Avulsa vinculada a bucket** via `transacoes.recorrencia_id = bucket.id` (mesmo campo que recorrência fixa usa, mas pra bucket).
 - **Caixa virou tab default** em Receitas (decisão Bruno 09/06) — mais útil dia-a-dia que Faturamento.
 - **Tab Geral default** em Despesas (decisão Bruno 09/06) — visão consolidada antes do detalhe.
+- **Cartão de crédito como conta normal** (decisão Bruno 09/06) — gambiarra pragmática. Sem fatura virtual, sem ciclo de fechamento. Bruno lança "Pagamento fatura" manualmente.
+- **Snapshot vs ao vivo no histórico** — `/historico` prefere snapshot se existir, senão calcula. Snapshot fica imutável (a Meta pode atualizar números retroativos, mas snap congela).
 
 ## Comandos úteis
 
@@ -303,4 +330,4 @@ Pausa após 1 semana sem requests. Sintoma: site retorna erro auth. Resolver: da
 
 ---
 
-**Última atualização:** 09/jun/2026 — Sprint 3.10 concluído. Próximo: histórico de buckets (Opção 1 + 2).
+**Última atualização:** 09/jun/2026 (sessão noite) — Sprints 3.11 a 3.15 concluídos. Próximo: histórico de buckets (Opção 1 + 2) + lançamento manual de saques Greenn pra fluxo de caixa.
