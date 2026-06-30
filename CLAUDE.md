@@ -10,7 +10,7 @@ Painel financeiro enxuto. Reset do v1 (`financeiro/`) porque ficou complexo. Mes
 - **EasyPanel:** projeto `ofertas-beta`, serviço `financeiro-v2` (Dockerfile multi-stage)
 - **DNS:** Cloudflare A `caixa.brunotropolis.com.br` → `187.77.49.160` (proxied)
 - **SSL:** Let's Encrypt via EasyPanel
-- **v1 antigo:** ❌ DERRUBADO em 30/06/2026 — DNS `financeiro.brunotropolis.com.br` deletado da zona Cloudflare brunotropolis (não resolve mais) + serviço EasyPanel `ofertas-beta/financeiro` parado (`services.app.stopService`). Repo `brunotropolis/financeiro` e o serviço parado seguem existindo (rebuildável); banco Supabase é compartilhado com o v2 (nada foi apagado). Hub `projetos` já apontava pro caixa.
+- **v1 antigo:** ❌ DERRUBADO e REMOVIDO em 30/06/2026 — DNS `financeiro.brunotropolis.com.br` deletado da zona Cloudflare brunotropolis (não resolve mais) + serviço EasyPanel `ofertas-beta/financeiro` **destruído** (`services.app.destroyService`, libera espaço). Repo `brunotropolis/financeiro` no GitHub segue existindo (não arquivado); banco Supabase é compartilhado com o v2 (nada foi apagado). Hub `projetos` já apontava pro caixa. Serviços restantes no projeto ofertas-beta: atendimento, browserless, copy-agent, financeiro-v2, painel, plano-sono, video-analyzer.
 
 ## Login
 
@@ -388,6 +388,42 @@ Bruno: "derruba o v1, trabalha só com o caixa; bucket edita hoje mantém histó
 
 1. **Saque Greenn R$ 4.323,60 (27/06) lançado** como receita avulsa (origem Recebimento Greenn, status recebido, conta Dream Baby Unicred). ID `0d78e649-53cc-4650-bbf2-1595c5e93d7f`. Mesmo padrão dos 3 anteriores. Ainda pendentes os 5 saques antigos (mai/26 + 11/05), como combinado.
 2. **v1 derrubado** — DNS `financeiro.brunotropolis.com.br` deletado (Cloudflare zona brunotropolis, record `c19b06e2…`) + serviço EasyPanel `ofertas-beta/financeiro` parado. Confirmado: domínio não resolve. Banco compartilhado intacto, repo/serviço seguem existindo (rebuildável).
-3. **Histórico de buckets implementado** (ver Pendências → seção ✅). Edição "daqui pra frente" via novo endpoint `/api/recorrentes/[id]/split`, filtro de mês respeita `data_fim`, dropdown do /lancar mostra só vigentes. Validado no banco. **Ainda não deployado** — falta `git push` + deploy EasyPanel do financeiro-v2.
+3. **Histórico de buckets implementado e DEPLOYADO** (ver Pendências → seção ✅). Edição "daqui pra frente" via novo endpoint `/api/recorrentes/[id]/split`, filtro de mês respeita `data_fim`, dropdown do /lancar mostra só vigentes. Validado no banco. Commit `f35fb10`, push + deploy EasyPanel `financeiro-v2` OK (endpoint live responde 401).
+4. **v1 destruído de vez** (não só parado) via `services.app.destroyService` — libera espaço. Confirmado pela lista de serviços do ofertas-beta (financeiro v1 sumiu).
 
-⚠️ **Deploy pendente:** as mudanças do histórico de buckets estão só locais (build passou). Pra ir pro ar: `git push origin main` + deploy EasyPanel (`services.app.deployService` via token do browser).
+### Gotcha EasyPanel deploy
+`services.app.deployService` **bloqueia até o build terminar** (Next.js ~2-4 min). Disparar de novo no meio **cancela** o build em andamento (retorna 500 "Command was canceled"). Fire **uma vez** e espere. Método de parar serviço = `services.app.stopService`; destruir = `services.app.destroyService` (não existe `disableService` nessa versão). Ler resposta de fetch-com-credencial: o wrapper do Chrome MCP zera o output → gravar em `document.title` e ler num segundo `javascript_tool` sem credencial.
+
+---
+
+## Redesign da home — "a língua da Day" (decidido 30/jun, a construir)
+
+A Day acha a home atual "um monte de dado". Reorganizar em volta de 5 perguntas dela: **quanto entrou · quanto saiu · como está o mês atual · como foi o anterior · como está o próximo** (+ quanto temos em caixa). Estrutura nova em 3 blocos: (1) o mês de agora (entrou/vai sair/sobra, grande + colorido + frase em PT), (2) quanto temos guardado, (3) os 3 meses lado a lado (anterior·atual·próximo com barrinhas). Princípio: contar história, não mostrar KPI abstrato. Mockup aprovado pelo Bruno.
+
+### Decisões travadas
+1. **"Vai sair" = planejado (previsto), não pago.** Eles não marcam despesa como `paga` → "saiu real" é sempre R$ 0 (enganoso). A home lidera com o planejado do mês. Esquecer o split pago/previsto na home.
+2. **Junho = mês 0.** Não recuperar maio/abril (controle só começou em junho). Em julho o "mês anterior" mostra junho, e vai enchendo daí pra frente. No mês atual o bloco "anterior" mostra "começamos a medir agora".
+3. **Caixa do banco via extrato (rotina Ter/Qui manhã).** O app não guarda saldo de conta (`saldo_atual`=0). Bruno encaminha o extrato (print/PDF) 2x/semana; **eu** atualizo o saldo de cada conta + leio as movimentações e lanço o que falta (dedup por data+valor+descrição). Bruno/Day não digitam. Entrou/saiu/em-caixa passam a sair do extrato real.
+
+### Modelo de contas (3 papéis) — confusão organizada
+Regra de ouro: **transferência entre contas próprias NÃO é entrou nem saiu** (é só mover); o gasto conta 1x quando a despesa é lançada.
+
+| Papel | Conta | ID | Obs |
+|---|---|---|---|
+| **caixa** | Manual RN — Unicred | `d6873ac0-52e3-4647-af2b-cdd1fa32e787` | conta principal (paga as coisas) |
+| **caixa** | Dream Baby — Unicred | `e4598c53-6282-4b62-8551-9b228265230d` | conta principal |
+| **caixa** | Dream Baby — Inter | `fee44583-83e7-438e-8ab5-89135d482df7` | normalmente ~0; só recebe transferências eventuais |
+| **caixa** | MRN Serviços — Inter | `991f3ba0-d67c-4570-beae-cd2153b2a6a5` | normalmente ~0; usada esse mês por bloqueio na Unicred |
+| **envelope** | MRN Serviços — Conta Simples | `2bf03aa5-f7cc-466c-9a3f-a85bcb9d7e88` | pré-pago (tipo `prepaga`): recebe das Unicred e paga Facebook/ferramentas/pessoal. **NÃO soma no caixa** (já comprometido) |
+| **dívida** | Manual RN — Cartão Unicred | `02cb3607-0b95-42ca-b29c-75774d8511a9` | cartão de crédito, mostra à parte, nunca soma no caixa |
+
+- **"Em caixa" da home = soma das contas `caixa`** (+ Greenn sacável mostrado à parte). Esconder conta `caixa` com saldo 0 (Inter fica oculto até ter saldo).
+- **Contas-fantasma desativadas em 30/jun** (`ativo=false`, não apagadas): Bruno C6 (`95f2b4dd`), Day C6 (`140f4d23`), Manual RN Banco do Brasil (`f52a43fb`, vai cancelar), Manual RN Mercado Pago (`46292767`), Manual RN PayPal (`6e08d751`).
+- **A fazer no build:** dar `papel` a cada conta (hardcode em `src/lib/constants.ts` ou coluna nova) + adicionar as 2 Inter ao set rastreado + a home agrupa por papel.
+
+### Greenn na home
+3 estados separados (senão a Day confunde "faturei" com "tenho"): **pronto pra sacar** (disponivel+antecipavel, cai em 24h) · **a liberar** (pendente) · **faturamento** (bruto) fica só no `/historico`, não na home.
+
+---
+
+**Última atualização:** 30/jun/2026 (parte 2) — v1 destruído, histórico de buckets no ar, modelo de contas (caixa/envelope/dívida) travado + fantasmas desativadas. Próximo: Bruno manda saldos/extratos → ligar "em caixa" + construir home nova.

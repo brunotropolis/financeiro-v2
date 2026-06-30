@@ -12,6 +12,7 @@ import {
   Search,
   Settings,
   HelpCircle,
+  FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -19,6 +20,7 @@ const NAV = [
   { section: "DASHBOARDS", items: [
     { href: "/", label: "Visão geral", icon: LayoutDashboard },
     { href: "/lancar", label: "Lançar", icon: PlusCircle },
+    { href: "/extrato", label: "Extrato", icon: FileText },
     { href: "/despesas", label: "Despesas", icon: Receipt },
     { href: "/receitas", label: "Receitas", icon: TrendingUp },
     { href: "/historico", label: "Histórico", icon: BarChart3 },
