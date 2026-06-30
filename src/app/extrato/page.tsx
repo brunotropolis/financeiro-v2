@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
-import { getProjetos, getBuckets, getOrigens } from "@/lib/catalog";
+import { getProjetos, getBuckets, getOrigens, getCategorias } from "@/lib/catalog";
 import { ExtratoClient, type ExtratoLinha } from "./extrato-client";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +12,7 @@ export default async function ExtratoPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const [movRes, projetos, buckets, origens] = await Promise.all([
+  const [movRes, projetos, buckets, origens, categorias] = await Promise.all([
     supabase
       .from("movimentacoes_bancarias")
       .select("id, tipo, valor, data, descricao, conta_id, bruto")
@@ -22,6 +22,7 @@ export default async function ExtratoPage() {
     getProjetos(),
     getBuckets(),
     getOrigens(),
+    getCategorias("despesa"),
   ]);
 
   const linhas: ExtratoLinha[] = ((movRes.data ?? []) as Array<{
@@ -64,7 +65,8 @@ export default async function ExtratoPage() {
           <ExtratoClient
             linhas={linhas}
             projetos={projetos}
-            buckets={buckets.map((b) => ({ id: b.id, nome: b.nome }))}
+            buckets={buckets.map((b) => ({ id: b.id, nome: b.nome, categoria_id: b.categoria_id }))}
+            categorias={categorias.map((c) => ({ id: c.id, nome: c.nome }))}
             origens={origens}
             jaTratadas={jaTratadas ?? 0}
           />

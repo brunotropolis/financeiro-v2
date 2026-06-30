@@ -17,6 +17,7 @@ export async function POST(request: NextRequest) {
     id?: string;
     acao?: "classificar" | "ignorar";
     projeto_id?: string | null;
+    categoria_id?: string | null;
     bucket_id?: string | null;
     origem_id?: string | null;
   };
@@ -43,6 +44,16 @@ export async function POST(request: NextRequest) {
 
   // classificar
   if (mov.tipo === "saida") {
+    // categoria: usa a escolhida; se não veio e tem bucket, herda a do bucket
+    let categoria_id = body.categoria_id || null;
+    if (!categoria_id && body.bucket_id) {
+      const { data: b } = await db
+        .from("recorrencias")
+        .select("categoria_id")
+        .eq("id", body.bucket_id)
+        .single();
+      categoria_id = b?.categoria_id || null;
+    }
     const novo = {
       tipo: "despesa",
       descricao: mov.descricao,
@@ -51,6 +62,7 @@ export async function POST(request: NextRequest) {
       data_pagamento: mov.data,
       conta_id: mov.conta_id,
       entidade_id: entidadeDeConta(mov.conta_id),
+      categoria_id,
       status: "paga",
       projeto_id: body.projeto_id || null,
       recorrencia_id: body.bucket_id || null,

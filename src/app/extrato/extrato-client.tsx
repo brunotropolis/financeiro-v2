@@ -16,7 +16,8 @@ export type ExtratoLinha = {
   contraparte: string;
 };
 type Projeto = { id: string; slug: string; nome: string; cor: string | null };
-type Bucket = { id: string; nome: string };
+type Bucket = { id: string; nome: string; categoria_id: string | null };
+type Categoria = { id: string; nome: string };
 type Origem = { id: string; slug: string; nome: string };
 
 function brl(n: number) {
@@ -31,18 +32,20 @@ function contaNome(id: string) {
   return c ? `${c.nome}` : "";
 }
 
-type Sel = { projeto_id?: string; bucket_id?: string; origem_id?: string };
+type Sel = { projeto_id?: string; categoria_id?: string; bucket_id?: string; origem_id?: string };
 
 export function ExtratoClient({
   linhas,
   projetos,
   buckets,
+  categorias,
   origens,
   jaTratadas,
 }: {
   linhas: ExtratoLinha[];
   projetos: Projeto[];
   buckets: Bucket[];
+  categorias: Categoria[];
   origens: Origem[];
   jaTratadas: number;
 }) {
@@ -56,6 +59,10 @@ export function ExtratoClient({
     () => projetos.find((p) => p.slug === "pessoal" || p.nome.toLowerCase() === "pessoal"),
     [projetos]
   );
+  const catPessoais = useMemo(
+    () => categorias.find((c) => c.nome.toLowerCase().startsWith("pessoa")),
+    [categorias]
+  );
   const saidas = rows.filter((r) => r.tipo === "saida");
   const entradas = rows.filter((r) => r.tipo === "entrada");
 
@@ -65,7 +72,12 @@ export function ExtratoClient({
 
   async function classificar(
     row: ExtratoLinha,
-    payload: { projeto_id?: string | null; bucket_id?: string | null; origem_id?: string | null }
+    payload: {
+      projeto_id?: string | null;
+      categoria_id?: string | null;
+      bucket_id?: string | null;
+      origem_id?: string | null;
+    }
   ) {
     setBusy((b) => ({ ...b, [row.id]: "saving" }));
     try {
@@ -106,7 +118,11 @@ export function ExtratoClient({
     for (const row of alvo) {
       // sequencial pra não estourar o banco; cada uma some da lista ao concluir
       // eslint-disable-next-line no-await-in-loop
-      await classificar(row, { projeto_id: pessoal.id, bucket_id: null });
+      await classificar(row, {
+        projeto_id: pessoal.id,
+        categoria_id: catPessoais?.id ?? null,
+        bucket_id: null,
+      });
     }
     setBulk(false);
     router.refresh();
@@ -170,11 +186,27 @@ export function ExtratoClient({
           {saidas.map((row) => (
             <Row key={row.id} row={row} accent="negative">
               <ProjetoChips row={row} />
-              <div className="flex items-center gap-2 mt-2">
+              <div className="flex items-center gap-2 mt-2 flex-wrap">
+                <select
+                  value={sel[row.id]?.categoria_id ?? ""}
+                  onChange={(e) => setField(row.id, { categoria_id: e.target.value || undefined })}
+                  className="text-[11px] bg-bg border border-line rounded-lg px-2 py-1 focus:outline-none focus:border-lime max-w-[150px]"
+                >
+                  <option value="">categoria…</option>
+                  {categorias.map((c) => (
+                    <option key={c.id} value={c.id}>{c.nome}</option>
+                  ))}
+                </select>
                 <select
                   value={sel[row.id]?.bucket_id ?? ""}
-                  onChange={(e) => setField(row.id, { bucket_id: e.target.value || undefined })}
-                  className="text-[11px] bg-bg border border-line rounded-lg px-2 py-1 focus:outline-none focus:border-lime max-w-[160px]"
+                  onChange={(e) => {
+                    const bid = e.target.value || undefined;
+                    const b = buckets.find((x) => x.id === bid);
+                    const patch: Sel = { bucket_id: bid };
+                    if (b?.categoria_id && !sel[row.id]?.categoria_id) patch.categoria_id = b.categoria_id;
+                    setField(row.id, patch);
+                  }}
+                  className="text-[11px] bg-bg border border-line rounded-lg px-2 py-1 focus:outline-none focus:border-lime max-w-[150px]"
                 >
                   <option value="">avulso</option>
                   {buckets.map((b) => (
@@ -184,7 +216,13 @@ export function ExtratoClient({
                 <SaveIgnore
                   busy={busy[row.id]}
                   canSave={!!sel[row.id]?.projeto_id}
-                  onSave={() => classificar(row, { projeto_id: sel[row.id]?.projeto_id, bucket_id: sel[row.id]?.bucket_id || null })}
+                  onSave={() =>
+                    classificar(row, {
+                      projeto_id: sel[row.id]?.projeto_id,
+                      categoria_id: sel[row.id]?.categoria_id || null,
+                      bucket_id: sel[row.id]?.bucket_id || null,
+                    })
+                  }
                   onIgnore={() => ignorar(row)}
                 />
               </div>
