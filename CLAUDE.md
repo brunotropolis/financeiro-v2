@@ -426,4 +426,29 @@ Regra de ouro: **transferência entre contas próprias NÃO é entrou nem saiu**
 
 ---
 
-**Última atualização:** 30/jun/2026 (parte 2) — v1 destruído, histórico de buckets no ar, modelo de contas (caixa/envelope/dívida) travado + fantasmas desativadas. Próximo: Bruno manda saldos/extratos → ligar "em caixa" + construir home nova.
+**Última atualização:** 30/jun/2026 (parte 3) — ver abaixo.
+
+---
+
+## Sessão 30/06/2026 (parte 3) — Greenn real + tela `/extrato`
+
+### Greenn — modelo corrigido (mais perto da realidade)
+- ⚠️ **`antecipável` está DENTRO de `pendente`** (é a parte do pendente que dá pra adiantar). **Somar os 3 campos conta dobrado.** O certo:
+  - **A receber na Greenn = disponível + pendente** (NÃO somar antecipável). Snapshot 30/jun 18:29: 2.748,22 + 14.132,30 = **R$ 16.880,52** (bateu com o "16-17k" que o Bruno confirmou).
+  - **Pronto pra sacar = disponível + antecipável** = R$ 13.388,21.
+  - Corrigir essa soma onde o app usar (dashboard "vai entrar" usa disp+antecip = sacável, OK; o "a receber total" é disp+pend).
+- **Saque ≠ venda nova.** Saque = a venda (faturamento) virando caixa no banco. 3 lentes que NÃO se somam: **Faturei** (competência, `/historico`) · **Na Greenn a receber** (disp+pend, snapshot) · **Saquei/entrou** (caixa, vira receita). Não calcular saldo na mão — o snapshot do bookmarklet lê o saldo real (a plataforma já soma venda e baixa saque). Manter snapshot fresco na rotina Ter/Qui.
+
+### Saldos Unicred gravados (extratos 30/jun)
+- Manual RN — Unicred: **R$ 6.522,74** · Dream Baby — Unicred: **R$ 2.126,23** → em caixa Unicred (parcial) **R$ 8.648,97**. Falta Conta Simples + Inter + cartão.
+- Greenn de junho fechou: 6 créditos = **R$ 22.990,90**, bate com o banco. ⚠️ **Bug pego:** dupliquei 2 saques (03/06 e 09/06 já estavam lançados desde 09/jun) — a reconciliação banco×lançado pegou; duplicatas apagadas. **Lição: sempre conferir linhas existentes antes de inserir receita.**
+
+### Tela `/extrato` — classificação de extrato bancário (IMPLEMENTADA + DEPLOYADA)
+Bruno joga o extrato, EU parseio, ELE direciona (projeto + avulso/bucket). Resolve o "saiu" sem eu adivinhar pessoal/PJ.
+- **Parser:** `scripts/parse_extrato_unicred.py` (pdfplumber, layout 3-linhas, **reconciliação** saldo_ini+soma==saldo_fim valida). `scripts/load_extrato.py` insere em `movimentacoes_bancarias` com dedup por hash + pré-classificação.
+- **Sem DDL:** usa a tabela **`movimentacoes_bancarias`** que o v1 já tinha (campos: `tipo` entrada/saida/transferencia, `conciliado` bool=status, `transacao_id`/`receita_id` link, `transferencia_destino_id`, `bruto` jsonb=raw+hash+tipo_auto, `origem`=importacao_csv). Pré-classifica: transferência entre contas próprias→`interna` (conciliado=true), CRED PIX GREENN→`greenn` (conciliado=true), resto→`gasto`/`entrada` (pendente).
+- **Rota:** `/extrato` (page + `extrato-client.tsx`) lista pendentes; `POST /api/extrato/classificar` cria transação (saida→despesa status=paga) ou receita (entrada) com projeto + bucket (`recorrencia_id`), e concilia a movimentação. Botão "Restantes → Pessoal · avulso" pra cauda pessoal. Nav: item "Extrato" entre Lançar e Despesas.
+- **Junho carregado:** 117 movimentações (75 gasto + 12 entrada pendentes; 24 interna + 6 greenn auto). Commit `feat(extrato)`, deploy OK (rota live 401, page 307, render confirmado em prod).
+- **Rotina:** Bruno classifica junho; daí a home nova consome `transacoes` reais (status=paga vira "saiu" de verdade). Próximos extratos (Conta Simples, Inter, cartão) entram pelo mesmo parser. ⚠️ parser é só Unicred por ora — outros bancos = adaptar regex (vamos evoluindo).
+
+**Pendências imediatas:** (1) Bruno classificar junho na `/extrato`; (2) extratos Conta Simples/Inter/cartão; (3) corrigir soma Greenn (disp+pend) onde o app exibir "a receber"; (4) construir a home nova consumindo os dados reais.
