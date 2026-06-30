@@ -1049,10 +1049,11 @@ async function GeralTab({
   // - Pra simplificar: recPago + recPrevisto (excluindo parceladas e buckets, já filtrado acima)
   //   + fixasNaoMatTotal
   const fixasPago = recPago; // recorrentes pagas (recPago já exclui buckets)
-  // Previsto fixo = recorrentes previstas (já materializadas) + fixas não materializadas
-  // + tetos buckets ativos (também são compromissos firmes do mês)
+  // Previsto fixo SÓ recorrências (sem buckets) — card "Total fixo do mês"
+  const fixasSoPrevisto = recPrevisto;
+  const fixasTotal = fixasPago + fixasSoPrevisto;
+  // Previsto fixo + buckets — card separado
   const fixasPrevisto = recPrevisto + bucketsTeto;
-  const fixasTotal = fixasPago + fixasPrevisto;
 
   // Já pago no mês (incluindo Meta Ads, que é "saiu da conta" automaticamente)
   const jaPagoComMeta = avulsasPago + recPago + meta.gastoTotal;
