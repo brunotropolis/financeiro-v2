@@ -20,11 +20,13 @@ type TxDoBucket = {
 };
 
 export function BucketTransacoesButton({
+  bucketId,
   bucketNome,
   transacoes,
   categorias,
   projetos,
 }: {
+  bucketId: string;
   bucketNome: string;
   transacoes: TxDoBucket[];
   categorias: Categoria[];
@@ -117,6 +119,7 @@ export function BucketTransacoesButton({
                               projeto_id: t.projeto_id,
                               data_competencia: t.data_competencia,
                               status: t.status,
+                              recorrencia_id: bucketId,
                             }}
                             categorias={categorias}
                             projetos={projetos}

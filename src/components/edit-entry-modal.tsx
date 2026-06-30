@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { X, Loader2, Trash2, Check, AlertCircle } from "lucide-react";
 import { CONTAS_ATIVAS } from "@/lib/constants";
@@ -30,6 +30,7 @@ export type EditableEntry = {
   // Transação
   data_competencia?: string;
   status?: string;
+  recorrencia_id?: string | null; // bucket vinculado (se houver)
   // Recorrencia
   dia_vencimento?: number | null;
   frequencia?: string;
@@ -79,6 +80,15 @@ export function EditEntryModal({
   const [statusReceita, setStatusReceita] = useState(entry.status ?? "previsto");
   // Bucket: "forward" preserva histórico e aplica o teto novo a partir de um mês;
   // "retro" corrige o teto em todos os meses (comportamento antigo).
+  const [bucketTrans, setBucketTrans] = useState(entry.recorrencia_id ?? "");
+  const [buckets, setBuckets] = useState<{ id: string; nome: string }[]>([]);
+  useEffect(() => {
+    if (entry.kind !== "transacao") return;
+    fetch("/api/buckets")
+      .then((r) => r.json())
+      .then((d) => setBuckets(d.buckets ?? []))
+      .catch(() => {});
+  }, [entry.kind]);
   const [bucketMode, setBucketMode] = useState<"forward" | "retro">("forward");
   const [bucketFromMonth, setBucketFromMonth] = useState<string>(() => {
     const d = new Date();
@@ -158,6 +168,7 @@ export function EditEntryModal({
         payload.valor = valorNum;
         payload.data_competencia = dataCompetencia;
         payload.status = status;
+        payload.recorrencia_id = bucketTrans || null;
         if (status === "paga") {
           payload.data_pagamento = dataCompetencia;
         } else {
@@ -424,6 +435,23 @@ export function EditEntryModal({
                   </button>
                 ))}
               </div>
+            </Field>
+          )}
+
+          {isTrans && (
+            <Field label="Vincular a bucket">
+              <select
+                value={bucketTrans}
+                onChange={(e) => setBucketTrans(e.target.value)}
+                className="w-full bg-bg border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-lime"
+              >
+                <option value="">— avulso (sem bucket) —</option>
+                {buckets.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.nome}
+                  </option>
+                ))}
+              </select>
             </Field>
           )}
 

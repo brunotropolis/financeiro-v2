@@ -20,6 +20,7 @@ const ALLOWED_FIELDS = new Set([
   "categoria_id",
   "projeto_id",
   "conta_id",
+  "recorrencia_id",
   "status",
   "notas",
 ]);

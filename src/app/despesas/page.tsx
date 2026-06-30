@@ -331,6 +331,7 @@ async function AvulsasTab({
                             projeto_id: t.projeto_id,
                             data_competencia: t.data_competencia,
                             status: t.status,
+                            recorrencia_id: null,
                           }}
                           categorias={catList}
                           projetos={projetos}
@@ -904,6 +905,7 @@ async function BucketsTab({
 
                 <div className="mt-3 pt-3 border-t border-line/40 flex items-center justify-between gap-2">
                   <BucketTransacoesButton
+                    bucketId={b.id}
                     bucketNome={b.nome}
                     transacoes={txsPorBucket.get(b.id) ?? []}
                     categorias={catList}
