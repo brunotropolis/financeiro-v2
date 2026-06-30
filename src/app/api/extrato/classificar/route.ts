@@ -50,6 +50,7 @@ export async function POST(request: NextRequest) {
       data_competencia: mov.data,
       data_pagamento: mov.data,
       conta_id: mov.conta_id,
+      entidade_id: entidadeDeConta(mov.conta_id),
       status: "paga",
       projeto_id: body.projeto_id || null,
       recorrencia_id: body.bucket_id || null,
