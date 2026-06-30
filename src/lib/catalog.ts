@@ -63,11 +63,12 @@ export async function getBuckets(): Promise<BucketItem[]> {
   const supabase = await createClient();
   const { data } = await supabase
     .from("recorrencias")
-    .select("id, nome, categoria_id, conta_id, valor_padrao, frequencia, tipo_valor, ativo")
+    .select("id, nome, categoria_id, conta_id, valor_padrao, frequencia, tipo_valor, ativo, data_inicio, data_fim")
     .eq("tipo", "despesa")
     .eq("tipo_valor", "bucket")
     .eq("ativo", true)
     .order("nome");
+  const hoje = new Date().toISOString().slice(0, 10);
   return ((data ?? []) as Array<{
     id: string;
     nome: string;
@@ -75,7 +76,12 @@ export async function getBuckets(): Promise<BucketItem[]> {
     conta_id: string | null;
     valor_padrao: number | string;
     frequencia: string;
-  }>).map((r) => ({
+    data_inicio: string | null;
+    data_fim: string | null;
+  }>)
+    // Só buckets vigentes hoje: já começaram e não foram encerrados (split move o teto pro futuro)
+    .filter((r) => (!r.data_inicio || r.data_inicio <= hoje) && (!r.data_fim || r.data_fim >= hoje))
+    .map((r) => ({
     id: r.id,
     nome: r.nome,
     categoria_id: r.categoria_id,

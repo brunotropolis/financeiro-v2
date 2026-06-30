@@ -10,13 +10,13 @@ Painel financeiro enxuto. Reset do v1 (`financeiro/`) porque ficou complexo. Mes
 - **EasyPanel:** projeto `ofertas-beta`, serviço `financeiro-v2` (Dockerfile multi-stage)
 - **DNS:** Cloudflare A `caixa.brunotropolis.com.br` → `187.77.49.160` (proxied)
 - **SSL:** Let's Encrypt via EasyPanel
-- **v1 antigo:** `financeiro.brunotropolis.com.br` ainda no ar (vai derrubar quando v2 estiver validado)
+- **v1 antigo:** ❌ DERRUBADO em 30/06/2026 — DNS `financeiro.brunotropolis.com.br` deletado da zona Cloudflare brunotropolis (não resolve mais) + serviço EasyPanel `ofertas-beta/financeiro` parado (`services.app.stopService`). Repo `brunotropolis/financeiro` e o serviço parado seguem existindo (rebuildável); banco Supabase é compartilhado com o v2 (nada foi apagado). Hub `projetos` já apontava pro caixa.
 
 ## Login
 
 - **URL:** https://caixa.brunotropolis.com.br/login
 - **Usuários:** `contato@brunotropolis.com.br` ou `day.dos.anjos.ramos@gmail.com`
-- **Senha:** `Caixa@2026` (resetada 08/06/2026, válida pros 2 painéis)
+- **Senha:** `Musha003$` (resetada 30/06/2026, válida pros 2 usuários — antiga `Caixa@2026`)
 
 ## Stack
 
@@ -234,26 +234,27 @@ Mostra na tabela por conta + total (com receitas).
 | **3.13** | ✅ | Meta Ads auto na Geral de Despesas + categoria/origem "Recebimento Greenn" + Greenn fora do dashboard. 4 boxes novos (Total fixo / Previsto fixo+buckets / Já pago+Meta / Total c/ Meta) |
 | **3.14** | ✅ | `/historico` (4 meses navegáveis) com Greenn via Meta + manual por origem. Tira GreennLine de Faturamento |
 | **3.15** | ✅ | Snapshot `faturamento_snapshots` (UPSERT idempotente) + botão "fechar mês" no histórico + cron n8n diário 23h BRT (fecha auto no último dia). Fix bucket `data_inicio` (usar mesFim, não mesInicio) |
-| **4** | ⬜ | Polish baseado em uso real + derrubar v1 |
+| **4** | 🔧 | Polish baseado em uso real. ✅ v1 derrubado (30/jun). ✅ Histórico de buckets (edição "daqui pra frente" preserva passado). Falta: histórico de buckets via audit_log (opção 2), demais polish |
 
 ## Pendências (próxima sessão)
 
-### 🥇 Histórico de buckets (decisão Bruno 09/06)
+### ✅ Histórico de buckets — IMPLEMENTADO 30/06/2026 (Opção 1)
 
-Hoje editar teto de bucket muda **todos os meses** (sem preservar passado). Implementar:
+Editar teto de bucket agora **preserva o histórico** e aplica o teto novo pra frente (decisão Bruno 30/06: "edita hoje, mantém histórico antigo, altera pro futuro"). Como funciona:
 
-- **Opção 1 (recomendada):** modal de edição pergunta "Aplicar a partir de qual mês?":
-  - "Foi sempre assim (retroativo)" → atualiza valor_padrao direto (comportamento atual)
-  - "A partir de Jul/26 em diante" → fecha bucket atual (`data_fim`) e cria novo (`data_inicio` + teto novo)
-  - Usa `data_inicio`/`data_fim` que já existem no schema
-- **Opção 2 (complemento):** aba "Histórico" no modal lendo do `audit_log` do v1 — mostra todas as alterações ("03/06 — Teto R$ 1k → R$ 1.5k")
-
-Custo: ~50 linhas opção 1 + ~30 linhas opção 2. Sem migration.
+- Modal de edição do bucket (`edit-entry-modal.tsx`) tem o seletor **"Aplicar alteração": Daqui pra frente (default) | Retroativo**.
+  - **Daqui pra frente** → input `type="month"` (default = mês seguinte). POSTa `/api/recorrentes/[id]/split`: encerra o bucket atual (`data_fim` = último dia do mês anterior ao escolhido) e cria um bucket novo (`data_inicio` = 1º dia do mês escolhido, `valor_padrao` = teto novo + demais campos). Meses passados continuam no bucket antigo (teto antigo). Se o mês escolhido ≤ início do bucket, vira update retroativo simples (sem split).
+  - **Retroativo** → PATCH normal em `valor_padrao` (comportamento antigo, corrige todos os meses).
+- Endpoint novo: `POST /api/recorrentes/[id]/split` (`route.ts`).
+- Filtro de mês passou a respeitar `data_fim` em 3 lugares: `ocorrenciasNoMes`/`ocorrenciasBucketNoMes` (`despesas/page.tsx`) e `ocorrenciasMensal` (`page.tsx` home). Bucket encerrado não aparece nos meses depois do `data_fim`.
+- `getBuckets` (`catalog.ts`, dropdown de vínculo do `/lancar`) mostra só buckets vigentes hoje (`data_inicio <= hoje <= data_fim`), pra não duplicar o bucket fechado.
+- Validado end-to-end no banco com bucket descartável: maio/jun=teto antigo, jul+=teto novo, 1 bucket ativo por mês (sem double-count).
+- **Pendente (opção 2, complemento):** aba "Histórico" no modal lendo `audit_log` do v1 mostrando as alterações de teto ("03/06 — R$ 1k → R$ 1.5k"). ~30 linhas, sem migration.
 
 ### Outras pendências
 - Cadastros sub-restantes (Bruno cadastrando aos poucos)
 - Polish do que aparecer no uso
-- Derrubar `financeiro.brunotropolis.com.br` (v1)
+- ~~Derrubar `financeiro.brunotropolis.com.br` (v1)~~ ✅ feito 30/06
 - Lançamento de saques Greenn como receita avulsa (origem `recebimento_greenn`) — Bruno faz manualmente quando saca
 - "Pagamento de fatura cartão" — cada mês Bruno lança 1 transação na conta Manual RN (corrente) com valor da fatura pra zerar a "dívida" simbólica do Cartão Unicred. Sem automação por ora.
 
@@ -326,8 +327,67 @@ python upload_to_drive.py NOME_DO_XLSX
 
 ## Notas sobre Supabase free tier
 
-Pausa após 1 semana sem requests. Sintoma: site retorna erro auth. Resolver: dashboard Supabase → `Resume project` (1-5 min). Prevenir: visita semanal OU upgrade pro tier ($25/mês).
+Pausa após 1 semana sem requests. Sintoma: DNS do projeto retorna `NXDOMAIN` (Non-existent domain). Resolver: dashboard Supabase → `Resume project` (1-5 min).
+
+**Prevenção (30/06/2026):** workflow n8n `INFRA | Supabase Keepalive` (`kPDneiUfaBwkbXGE`), cron `0 12 */2 * *` (12h UTC dia sim/dia não) bate `GET /rest/v1/contas_bancarias?select=id&limit=1` com a `SUPABASE_ANON_KEY`. Script: `scripts/build_supabase_keepalive.py` (idempotente).
 
 ---
 
-**Última atualização:** 09/jun/2026 (sessão noite) — Sprints 3.11 a 3.15 concluídos. Próximo: histórico de buckets (Opção 1 + 2) + lançamento manual de saques Greenn pra fluxo de caixa.
+## Sessão 30/06/2026
+
+**Contexto:** projeto Supabase ficou pausado por inatividade. Após reativar, vários ajustes pontuais.
+
+### Senhas resetadas
+Pelo admin API (service_role) — `Musha003$` pros 2 usuários:
+- `contato@brunotropolis.com.br`
+- `day.dos.anjos.ramos@gmail.com`
+
+Recipe (Python, urllib): `PUT /auth/v1/admin/users/{uid}` com body `{"password": "..."}` + token validado via `POST /auth/v1/token?grant_type=password`. ⚠️ Gotcha: o `$` na senha precisa ir via body JSON (sem `--data-binary @file` no curl com Git Bash em Windows — vai vazio silenciosamente). Use `urllib.request` direto.
+
+### Keepalive Supabase
+Workflow n8n criado pra evitar pausa do free tier — ver "Notas sobre Supabase free tier" acima.
+
+### Saques Greenn lançados (caixa real Dream Baby Unicred)
+3 saques transferidos a partir de 15/06 lançados como receitas avulsas, origem **Recebimento Greenn**, status `recebido`:
+
+| Data | Valor | ID |
+|---|---|---|
+| 22/06 | R$ 2.220,08 | `99386649…` |
+| 19/06 | R$ 2.653,01 | `947e8a7c…` |
+| 15/06 | R$ 2.433,77 | `26c9507a…` |
+
+**Total: R$ 7.306,86.** Padrão do INSERT (`receitas_brutas`):
+- `entidade_id = dff3c509…` (Dream Baby)
+- `origem_id = 274b4f63…` (Recebimento Greenn)
+- `projeto_id = c327e4ef…`
+- `valor_bruto = valor_liquido`, `taxas = 0`, `parcelas = 1`
+- `data_venda = data_prevista_pagamento = data_recebimento = <data do saque>`
+
+**Cruzamento da fonte (Greenn `/extrato?action=my-withdrawal`):** os 10 saques mais recentes aparecem no DOM como texto após carregar a SPA — parsing via regex `(\d{2}\/\d{2}\/\d{2})\s+(\d{2}:\d{2})\s+R\$\s+...`. A API `apiadm.greenn.com.br/api/withdraw` existe mas o cookie httpOnly não é acessível via Chrome MCP (harness bloqueia chaves sensíveis no localStorage e cookies), então parse direto do DOM é o caminho. Ainda **pendente lançar 5 saques antigos (4 de mai/26 + 1 de 11/05) e o de 27/06 R$ 4.323,60 status `Requisitado`** — Bruno disse pra lançar só dos transferidos a partir de 15/06.
+
+### Bug fix em `/despesas` tab Geral — "Total fixo do mês" duplicado
+- **Sintoma reportado pelo Bruno:** card "Total fixo do mês" mostrando o mesmo valor de "Previsto fixo + buckets".
+- **Causa:** `fixasTotal = fixasPago + fixasPrevisto`, e `fixasPrevisto = recPrevisto + bucketsTeto`. Quando `fixasPago=0` (típico cedo no mês), os 2 cards ficam idênticos porque ambos somam `bucketsTeto`.
+- **Fix:** `src/app/despesas/page.tsx` linha ~1051. Card "Total fixo do mês" agora usa `fixasSoPrevisto = recPrevisto` (sem buckets). `fixasPrevisto` mantido pro card "Previsto fixo + buckets". Commit `85c83aa`.
+
+### Pendência identificada nesta sessão
+**Dashboard home (`/`) não LISTA buckets em lugar nenhum** — só soma `bucketsTeto` dentro do KPI "Despesas previstas" e `bucketsUsado` no "Despesas reais". Os 8 buckets ativos (7 entram em jun/26, ~R$ 10.996 de teto) ficam invisíveis na home.
+- Opção 1 (sugerida): card "Buckets do mês" na home, lista compacta com utilizado/teto + barra (mini-versão do `/despesas` tab Buckets).
+- Opção 2: subtotal explícito nos KPIs (`R$ X (sendo R$ 10.996 buckets)`).
+- Bruno não decidiu ainda; segue como pendente.
+
+---
+
+**Última atualização:** 30/jun/2026.
+
+---
+
+## Sessão 30/06/2026 (parte 2)
+
+Bruno: "derruba o v1, trabalha só com o caixa; bucket edita hoje mantém histórico antigo mas altera pro futuro; lança o saque de 4k que já caiu."
+
+1. **Saque Greenn R$ 4.323,60 (27/06) lançado** como receita avulsa (origem Recebimento Greenn, status recebido, conta Dream Baby Unicred). ID `0d78e649-53cc-4650-bbf2-1595c5e93d7f`. Mesmo padrão dos 3 anteriores. Ainda pendentes os 5 saques antigos (mai/26 + 11/05), como combinado.
+2. **v1 derrubado** — DNS `financeiro.brunotropolis.com.br` deletado (Cloudflare zona brunotropolis, record `c19b06e2…`) + serviço EasyPanel `ofertas-beta/financeiro` parado. Confirmado: domínio não resolve. Banco compartilhado intacto, repo/serviço seguem existindo (rebuildável).
+3. **Histórico de buckets implementado** (ver Pendências → seção ✅). Edição "daqui pra frente" via novo endpoint `/api/recorrentes/[id]/split`, filtro de mês respeita `data_fim`, dropdown do /lancar mostra só vigentes. Validado no banco. **Ainda não deployado** — falta `git push` + deploy EasyPanel do financeiro-v2.
+
+⚠️ **Deploy pendente:** as mudanças do histórico de buckets estão só locais (build passou). Pra ir pro ar: `git push origin main` + deploy EasyPanel (`services.app.deployService` via token do browser).

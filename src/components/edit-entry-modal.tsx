@@ -77,6 +77,16 @@ export function EditEntryModal({
   const [dataPrevista, setDataPrevista] = useState(entry.data_prevista_pagamento ?? "");
   const [dataRecebimento, setDataRecebimento] = useState(entry.data_recebimento ?? "");
   const [statusReceita, setStatusReceita] = useState(entry.status ?? "previsto");
+  // Bucket: "forward" preserva histórico e aplica o teto novo a partir de um mês;
+  // "retro" corrige o teto em todos os meses (comportamento antigo).
+  const [bucketMode, setBucketMode] = useState<"forward" | "retro">("forward");
+  const [bucketFromMonth, setBucketFromMonth] = useState<string>(() => {
+    const d = new Date();
+    const nextIdx = d.getMonth() + 1; // 1..12 (mês seguinte, base 0+1)
+    const y = nextIdx > 11 ? d.getFullYear() + 1 : d.getFullYear();
+    const mm = (nextIdx % 12) + 1; // 1..12
+    return `${y}-${String(mm).padStart(2, "0")}`;
+  });
 
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -91,6 +101,30 @@ export function EditEntryModal({
     }
     setSaving(true);
     try {
+      // Bucket "daqui pra frente": encerra o atual e cria um novo a partir do mês escolhido.
+      if (isBucket && bucketMode === "forward") {
+        const res = await fetch(`/api/recorrentes/${entry.id}/split`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            from_month: bucketFromMonth,
+            updates: {
+              nome: descricao,
+              valor_padrao: valorNum,
+              frequencia,
+              categoria_id: categoriaId || null,
+              conta_id: contaId || null,
+              projeto_id: projetoId || null,
+            },
+          }),
+        });
+        const out = await res.json();
+        if (!res.ok || out.error) throw new Error(out.error || `Erro ${res.status}`);
+        onClose();
+        router.refresh();
+        return;
+      }
+
       const path = isReceita
         ? `/api/receitas/${entry.id}`
         : isTrans
@@ -433,6 +467,54 @@ export function EditEntryModal({
                 <option value="mensal">Mensal</option>
                 <option value="bimestral">Bimestral</option>
               </select>
+            </Field>
+          )}
+
+          {isBucket && (
+            <Field label="Aplicar alteração">
+              <div className="flex gap-2 mb-2">
+                <button
+                  type="button"
+                  onClick={() => setBucketMode("forward")}
+                  className={cn(
+                    "text-xs rounded-lg px-3 py-1.5 border transition-colors",
+                    bucketMode === "forward"
+                      ? "border-lime bg-lime text-bg font-semibold"
+                      : "border-line text-ink-soft hover:bg-elevated"
+                  )}
+                >
+                  Daqui pra frente
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBucketMode("retro")}
+                  className={cn(
+                    "text-xs rounded-lg px-3 py-1.5 border transition-colors",
+                    bucketMode === "retro"
+                      ? "border-lime bg-lime text-bg font-semibold"
+                      : "border-line text-ink-soft hover:bg-elevated"
+                  )}
+                >
+                  Retroativo
+                </button>
+              </div>
+              {bucketMode === "forward" ? (
+                <>
+                  <input
+                    type="month"
+                    value={bucketFromMonth}
+                    onChange={(e) => setBucketFromMonth(e.target.value)}
+                    className="w-full bg-bg border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-lime"
+                  />
+                  <p className="text-[11px] text-ink-dim mt-1">
+                    O histórico antes desse mês fica intacto. A partir dele vale o teto novo.
+                  </p>
+                </>
+              ) : (
+                <p className="text-[11px] text-amber-400 mt-1">
+                  Corrige o teto em todos os meses (passado e futuro).
+                </p>
+              )}
             </Field>
           )}
         </div>

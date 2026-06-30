@@ -31,7 +31,7 @@ function rangeFromMonth(mesIso: string): { inicio: string; fim: string; label: s
   };
 }
 
-function ocorrenciasMensal(rec: { frequencia: string; data_inicio: string | null }, inicioStr: string): number {
+function ocorrenciasMensal(rec: { frequencia: string; data_inicio: string | null; data_fim?: string | null }, inicioStr: string): number {
   if (!rec.data_inicio) return 1;
   const [iy, im] = inicioStr.split("-").map(Number);
   const mesInicio = new Date(iy, im - 1, 1);
@@ -39,6 +39,8 @@ function ocorrenciasMensal(rec: { frequencia: string; data_inicio: string | null
   const di = new Date(rec.data_inicio);
   // Conta se data_inicio cai dentro ou antes do mês (não só antes do dia 1)
   if (di > mesFim) return 0;
+  // Encerrado antes desse mês (data_fim) → não conta (preserva histórico)
+  if (rec.data_fim && new Date(rec.data_fim) < mesInicio) return 0;
   switch (rec.frequencia) {
     case "mensal":
       return 1;
@@ -152,7 +154,7 @@ export default async function DashboardPage({
   // 3c. Recorrências ativas (fixas + buckets)
   const recAtivasRes = await supabase
     .from("recorrencias")
-    .select("id, valor_padrao, frequencia, data_inicio, tipo_valor, ativo")
+    .select("id, valor_padrao, frequencia, data_inicio, data_fim, tipo_valor, ativo")
     .in("conta_id", [...CONTAS_ATIVAS_IDS])
     .eq("tipo", "despesa")
     .eq("ativo", true);
@@ -161,6 +163,7 @@ export default async function DashboardPage({
     valor_padrao: number | string;
     frequencia: string;
     data_inicio: string | null;
+    data_fim: string | null;
     tipo_valor: string | null;
   }>;
   const fixas = recAtivas.filter((r) => r.tipo_valor !== "bucket");

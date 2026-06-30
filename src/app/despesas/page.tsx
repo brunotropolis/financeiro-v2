@@ -27,6 +27,7 @@ type RecorrenciaRow = {
   ativo: boolean;
   projeto_id: string | null;
   data_inicio: string | null;
+  data_fim: string | null;
 };
 
 type AvulsaRow = {
@@ -348,7 +349,7 @@ async function AvulsasTab({
 }
 
 function ocorrenciasNoMes(
-  rec: { frequencia: string; data_inicio: string | null; dia_vencimento: number | null },
+  rec: { frequencia: string; data_inicio: string | null; dia_vencimento: number | null; data_fim?: string | null },
   inicioStr: string
 ): number {
   if (!rec.data_inicio) return 1;
@@ -359,6 +360,9 @@ function ocorrenciasNoMes(
   // Se a data_inicio está depois do FIM do mês, não conta.
   // (data_inicio dentro do mês conta normal — ex: bucket começa dia 5, ainda aparece em junho)
   if (di > mesFim) return 0;
+  // Se foi encerrado (data_fim) antes do começo desse mês, não conta mais.
+  // (preserva histórico: meses passados continuam com o teto antigo)
+  if (rec.data_fim && new Date(rec.data_fim) < mesInicio) return 0;
   switch (rec.frequencia) {
     case "mensal":
       return 1;
@@ -378,11 +382,16 @@ function ocorrenciasNoMes(
 }
 
 function ocorrenciasBucketNoMes(
-  bucket: { frequencia: string; data_inicio: string | null },
+  bucket: { frequencia: string; data_inicio: string | null; data_fim?: string | null },
   inicioStr: string
 ): number {
   return ocorrenciasNoMes(
-    { frequencia: bucket.frequencia, data_inicio: bucket.data_inicio, dia_vencimento: null },
+    {
+      frequencia: bucket.frequencia,
+      data_inicio: bucket.data_inicio,
+      dia_vencimento: null,
+      data_fim: bucket.data_fim ?? null,
+    },
     inicioStr
   );
 }
@@ -407,7 +416,7 @@ async function RecorrentesTab({
   const recRes = await supabase
     .from("recorrencias")
     .select(
-      "id, nome, valor_padrao, frequencia, dia_vencimento, conta_id, categoria_id, tipo_valor, ativo, projeto_id, data_inicio"
+      "id, nome, valor_padrao, frequencia, dia_vencimento, conta_id, categoria_id, tipo_valor, ativo, projeto_id, data_inicio, data_fim"
     )
     .in("conta_id", [...CONTAS_ATIVAS_IDS])
     .eq("tipo", "despesa")
@@ -694,7 +703,7 @@ async function BucketsTab({
   const recRes = await supabase
     .from("recorrencias")
     .select(
-      "id, nome, valor_padrao, frequencia, dia_vencimento, conta_id, categoria_id, tipo_valor, ativo, projeto_id, data_inicio"
+      "id, nome, valor_padrao, frequencia, dia_vencimento, conta_id, categoria_id, tipo_valor, ativo, projeto_id, data_inicio, data_fim"
     )
     .in("conta_id", [...CONTAS_ATIVAS_IDS])
     .eq("tipo", "despesa")
@@ -980,7 +989,7 @@ async function GeralTab({
   // Fixas não materializadas (esperadas pelo padrão)
   const fixasResAll = await supabase
     .from("recorrencias")
-    .select("id, valor_padrao, frequencia, data_inicio, dia_vencimento, tipo_valor, ativo")
+    .select("id, valor_padrao, frequencia, data_inicio, data_fim, dia_vencimento, tipo_valor, ativo")
     .in("conta_id", [...CONTAS_ATIVAS_IDS])
     .eq("tipo", "despesa")
     .eq("ativo", true);
@@ -989,6 +998,7 @@ async function GeralTab({
     valor_padrao: number | string;
     frequencia: string;
     data_inicio: string | null;
+    data_fim: string | null;
     dia_vencimento: number | null;
     tipo_valor: string | null;
   }>)
@@ -1005,7 +1015,7 @@ async function GeralTab({
   // 3. Buckets — utilizado vs provisionado
   const bucketsRes = await supabase
     .from("recorrencias")
-    .select("id, nome, valor_padrao, categoria_id, frequencia, data_inicio")
+    .select("id, nome, valor_padrao, categoria_id, frequencia, data_inicio, data_fim")
     .in("conta_id", [...CONTAS_ATIVAS_IDS])
     .eq("tipo", "despesa")
     .eq("tipo_valor", "bucket")
@@ -1017,6 +1027,7 @@ async function GeralTab({
     categoria_id: string | null;
     frequencia: string;
     data_inicio: string | null;
+    data_fim: string | null;
   }>).filter((b) => ocorrenciasBucketNoMes(b, inicio) > 0);
 
   // Transações vinculadas a buckets (recorrencia_id = bucket.id)
